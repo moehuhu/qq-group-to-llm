@@ -8,7 +8,7 @@ export * from './types'
 export { configSchema as Config } from './config'
 
 export const name = 'message-log'
-
+export const inject = ['database'];
 export const apply = Object.assign(function apply(ctx: Context, config: Config) {
   ctx.database.extend('chaoli_group_messages', {
     id: 'string',
@@ -28,4 +28,4 @@ export const apply = Object.assign(function apply(ctx: Context, config: Config) 
   applyMessageListener(ctx, config)
   applyQueryCommand(ctx, config)
   applyRetentionCleanup(ctx, config)
-}, { inject: ['database'] })
+})
