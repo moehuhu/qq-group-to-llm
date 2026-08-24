@@ -1,5 +1,6 @@
 import { Context } from 'koishi'
 import type { Config } from './config'
+import { logger } from './logger'
 import { MessageRecord, TABLE } from './model'
 import type {
   AnalysisContext,
@@ -28,6 +29,7 @@ export async function fetchMessages(
   target: AnalysisTarget,
   days: number,
 ): Promise<MessageRecord[]> {
+  const log = logger(ctx)
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
   const records = await ctx.database
     .select(TABLE)
@@ -35,6 +37,9 @@ export async function fetchMessages(
     .orderBy('timestamp', 'desc')
     .limit(config.maxMessages)
     .execute()
+
+  log.info(`取到频道 ${target.channelId} 最近 ${days} 天的 ${records.length} 条消息` +
+    (records.length >= config.maxMessages ? `（已达 maxMessages=${config.maxMessages} 上限，更早的消息被截断）` : ''))
   return records.reverse()
 }
 
@@ -129,16 +134,20 @@ export async function analyzeGroup(
   target: AnalysisTarget,
   query = '',
 ): Promise<GroupAnalysisResult> {
+  const log = logger(ctx)
+  const startedAt = Date.now()
   const context = buildContext(messages, target, query)
   const messagesText = formatForPrompt(messages)
   const { userStats, totalChars, mostActivePeriod } = calculateStats(messages)
+
+  log.info(`开始群分析: ${context.groupName}，${messages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
   // 任一子任务失败不应拖垮整份报告
   const settle = async <T>(task: Promise<T[]>, name: string): Promise<T[]> => {
     try {
       return await task
     } catch (error) {
-      ctx.logger.warn(`${name}失败:`, error)
+      log.warn(`${name}失败，该部分将留空:`, error)
       return []
     }
   }
@@ -149,6 +158,8 @@ export async function analyzeGroup(
       ? settle<GoldenQuote>(ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
       : Promise.resolve([]),
   ])
+
+  log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${topics.length} 个话题 / ${goldenQuotes.length} 条金句`)
 
   return {
     groupName: context.groupName,
@@ -170,7 +181,10 @@ export async function answerQuery(
   target: AnalysisTarget,
   query: string,
 ): Promise<string> {
-  return ctx.qqGroupLlm.answerQuery(formatForPrompt(messages), buildContext(messages, target, query))
+  const log = logger(ctx)
+  const context = buildContext(messages, target, query)
+  log.info(`群聊问答: ${context.groupName} 基于 ${messages.length} 条消息，问题「${query}」`)
+  return ctx.qqGroupLlm.answerQuery(formatForPrompt(messages), context)
 }
 
 /** 把分析结果渲染为纯文本报告 */

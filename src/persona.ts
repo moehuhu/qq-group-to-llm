@@ -1,6 +1,7 @@
 import { Context } from 'koishi'
 import { dump, load } from 'js-yaml'
 import type { Config } from './config'
+import { logger } from './logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from './model'
 import type { UserPersonaProfile } from './types'
 
@@ -41,6 +42,7 @@ async function collectMessages(
   config: Config,
   target: PersonaTarget,
 ): Promise<MessageRecord[]> {
+  const log = logger(ctx)
   const since = new Date(Date.now() - config.personaLookbackDays * 24 * 60 * 60 * 1000)
   const query: Record<string, unknown> = {
     platform: target.platform,
@@ -57,6 +59,10 @@ async function collectMessages(
     .orderBy('timestamp', 'desc')
     .limit(config.personaMaxMessages)
     .execute()
+
+  const range = config.personaOnlyCurrentGroup && target.channelId ? `频道 ${target.channelId}` : '全部已记录频道'
+  log.info(`取到 ${target.username}(${target.userId}) 最近 ${config.personaLookbackDays} 天在${range}的 ${records.length} 条发言` +
+    (records.length >= config.personaMaxMessages ? `（已达 personaMaxMessages=${config.personaMaxMessages} 上限）` : ''))
   return records.reverse()
 }
 
@@ -86,11 +92,12 @@ async function loadRecord(ctx: Context, id: string): Promise<PersonaRecord | und
 }
 
 function parsePersona(ctx: Context, record?: PersonaRecord): UserPersonaProfile | null {
+  const log = logger(ctx)
   if (!record?.persona) return null
   try {
     return load(record.persona) as UserPersonaProfile
   } catch (error) {
-    ctx.logger.warn(`解析历史画像失败 (${record.id})，将忽略:`, error)
+    log.warn(`解析历史画像失败 (${record.id})，将忽略:`, error)
     return null
   }
 }
@@ -116,16 +123,24 @@ export async function resolvePersona(
   target: PersonaTarget,
   force = false,
 ): Promise<PersonaOutcome> {
+  const log = logger(ctx)
   const id = buildId(target.platform, target.userId)
+  const startedAt = Date.now()
+  log.info(`开始处理用户画像 ${id}${force ? '（强制刷新）' : ''}`)
+
   const record = await loadRecord(ctx, id)
   const previous = parsePersona(ctx, record)
+  log.debug(`历史画像 ${previous ? `存在，上次分析于 ${record?.lastAnalysisAt}` : '不存在'}`)
 
   if (!force && previous && isFresh(record, config.personaCacheDays)) {
+    log.info(`命中画像缓存 ${id}（personaCacheDays=${config.personaCacheDays} 天内），跳过 LLM 调用`)
     return { persona: previous, cached: true, messageCount: 0 }
   }
 
   const messages = await collectMessages(ctx, config, target)
   if (messages.length < config.personaMinMessages) {
+    log.info(`${id} 发言 ${messages.length} 条不足 personaMinMessages=${config.personaMinMessages}，` +
+      `${previous ? '回落到历史画像' : '无历史画像可用'}`)
     // 记录不足但有历史画像时，返回旧的总比什么都没有好
     return {
       persona: previous,
@@ -145,17 +160,22 @@ export async function resolvePersona(
   })
 
   if (!generated) {
+    log.warn(`${id} 的画像生成失败，${previous ? '保留历史画像' : '无历史画像可用'}`)
     return { persona: previous, cached: !!previous, messageCount: messages.length, reason: 'LLM 未返回可用的画像结果' }
   }
 
   // 丢弃模型编造的 msgid，只保留真实存在的引用
   const known = new Map(messages.map((message) => [message.messageId || message.id, message]))
-  const merged = mergePersona(previous, {
-    ...generated,
-    evidence: toArray(generated.evidence)
-      .map((item) => item.replace(/^msgid:/, '').trim())
-      .filter((item) => known.has(item)),
-  })
+  const claimed = toArray(generated.evidence).map((item) => item.replace(/^msgid:/, '').trim())
+  const evidence = claimed.filter((item) => known.has(item))
+  const fabricated = claimed.filter((item) => !known.has(item))
+  if (fabricated.length) {
+    log.warn(`${id} 的画像引用了 ${fabricated.length} 个不存在的 msgid，已丢弃: ${fabricated.join(', ')}`)
+  }
+
+  const merged = mergePersona(previous, { ...generated, evidence })
+  log.debug(`${id} 合并后画像: 特质 ${toArray(merged.keyTraits).length} 项 / ` +
+    `兴趣 ${toArray(merged.interests).length} 项 / 证据 ${evidence.length}/${claimed.length} 条`)
 
   const now = new Date()
   await ctx.database.upsert(PERSONA_TABLE, [{
@@ -168,6 +188,8 @@ export async function resolvePersona(
     updatedAt: now,
   }])
 
+  log.info(`用户画像 ${id} 已更新（${merged.lastMergedFromHistory ? '基于历史迭代' : '首次生成'}），` +
+    `基于 ${messages.length} 条发言，总耗时 ${Date.now() - startedAt}ms`)
   return { persona: merged, cached: false, messageCount: messages.length }
 }
 
@@ -199,6 +221,7 @@ export async function resolveEvidence(
   persona: UserPersonaProfile,
   limit = 5,
 ): Promise<string[]> {
+  const log = logger(ctx)
   const ids = toArray(persona.evidence).slice(0, limit)
   if (!ids.length) return []
 
@@ -212,5 +235,9 @@ export async function resolveEvidence(
     byId.set(record.messageId || record.id, record)
     byId.set(record.id, record)
   }
-  return ids.map((id) => byId.get(id)?.content).filter(Boolean) as string[]
+  const quotes = ids.map((id) => byId.get(id)?.content).filter(Boolean) as string[]
+  if (quotes.length < ids.length) {
+    log.debug(`证据回查: ${ids.length} 个 msgid 命中 ${quotes.length} 条原文，其余已被清理或删除`)
+  }
+  return quotes
 }

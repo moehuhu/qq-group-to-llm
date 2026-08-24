@@ -1,6 +1,7 @@
 import { Context, Element, Session } from 'koishi'
 import type { Config } from './config'
 import { MessageRecord, TABLE } from './model'
+import { logger } from './logger'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
@@ -55,12 +56,29 @@ function buildRecord(session: Session, config: Config): MessageRecord {
 
 /** 注册消息监听，将符合条件的消息写入数据库 */
 export function applyMessageListener(ctx: Context, config: Config) {
+  // 在插件作用域内取一次；dispose 阶段 ctx.logger 已不可用，不能延迟解析
+  const log = logger(ctx)
+
+  const scope = config.listenAll
+    ? '全部群组'
+    : config.groups.length ? `${config.groups.length} 个指定群组: ${config.groups.join(', ')}` : '无（未配置 groups）'
+  log.info(`消息监听已启动，范围: ${scope}`)
+
+  let recorded = 0
   ctx.on('message', async (session) => {
-    if (!shouldRecord(session, config)) return
+    if (!shouldRecord(session, config)) {
+      log.debug(`跳过消息 ${session.platform}:${session.channelId} <- ${session.userId}`)
+      return
+    }
+    const record = buildRecord(session, config)
     try {
-      await ctx.database.create(TABLE, buildRecord(session, config))
+      await ctx.database.create(TABLE, record)
+      recorded++
+      log.debug(`已记录 #${recorded} ${record.channelId} ${record.username}(${record.userId}): ${record.content.slice(0, 60)}`)
     } catch (error) {
-      ctx.logger.warn('记录消息失败:', error)
+      log.warn(`记录消息失败 (id=${record.id}):`, error)
     }
   })
+
+  ctx.on('dispose', () => log.info(`消息监听已停止，本次运行共记录 ${recorded} 条`))
 }

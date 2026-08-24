@@ -1,19 +1,31 @@
 import { Context } from 'koishi'
 import type { Config } from './config'
 import { TABLE } from './model'
+import { logger } from './logger'
 
 const CLEAN_INTERVAL = 6 * 60 * 60 * 1000 // 每 6 小时执行一次
 
 /** 注册定时任务，删除超出保留期限的过期消息 */
 export function applyRetentionCleanup(ctx: Context, config: Config) {
-  if (config.retentionDays <= 0) return
+  const log = logger(ctx)
+
+  if (config.retentionDays <= 0) {
+    log.info('消息永久保留，未启用定期清理')
+    return
+  }
+
   const retentionMs = config.retentionDays * 24 * 60 * 60 * 1000
+  log.info(`定期清理已启用，保留 ${config.retentionDays} 天，每 ${CLEAN_INTERVAL / 3600000} 小时执行一次`)
+
   ctx.setInterval(async () => {
     const cutoff = new Date(Date.now() - retentionMs)
+    const startedAt = Date.now()
     try {
-      await ctx.database.remove(TABLE, { timestamp: { $lt: cutoff } })
+      const result = await ctx.database.remove(TABLE, { timestamp: { $lt: cutoff } })
+      const removed = (result as { removed?: number })?.removed
+      log.info(`清理完成，删除 ${removed ?? '未知数量'} 条 ${cutoff.toLocaleString('zh-CN', { hour12: false })} 之前的消息，耗时 ${Date.now() - startedAt}ms`)
     } catch (error) {
-      ctx.logger.warn('清理过期消息失败:', error)
+      log.warn('清理过期消息失败:', error)
     }
   }, CLEAN_INTERVAL)
 }

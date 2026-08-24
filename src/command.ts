@@ -1,5 +1,6 @@
 import { Context, Session } from 'koishi'
 import type { Config } from './config'
+import { logger } from './logger'
 import { TABLE } from './model'
 import { analyzeGroup, answerQuery, AnalysisTarget, fetchMessages, renderReport } from './analysis'
 import { renderPersona, resolveEvidence, resolvePersona } from './persona'
@@ -20,6 +21,7 @@ function resolveTarget(session: Session, channelId: string): AnalysisTarget {
 
 /** msglog：查询最近的原始消息记录 */
 function applyLogCommand(ctx: Context, config: Config) {
+  const log = logger(ctx)
   ctx.command('msglog [count:number]', '查询最近的消息记录')
     .option('group', '-g <group:string>  指定群组 ID')
     .option('user', '-u <user:string>  指定用户 ID')
@@ -30,6 +32,8 @@ function applyLogCommand(ctx: Context, config: Config) {
       if (channelId) query.channelId = channelId
       if (options?.user) query.userId = options.user
 
+      log.info(`msglog 由 ${session?.userId} 在 ${session?.channelId} 发起，条件 ${JSON.stringify(query)}，limit=${limit}`)
+
       const records = await ctx.database
         .select(TABLE)
         .where(query)
@@ -37,6 +41,7 @@ function applyLogCommand(ctx: Context, config: Config) {
         .limit(limit)
         .execute()
 
+      log.info(`msglog 返回 ${records.length} 条记录`)
       if (!records.length) return '暂无消息记录'
 
       return records.map((record) => {
@@ -48,6 +53,7 @@ function applyLogCommand(ctx: Context, config: Config) {
 
 /** 群分析：调用 LLM 生成报告，或就聊天记录自由提问 */
 function applyAnalysisCommand(ctx: Context, config: Config) {
+  const log = logger(ctx)
   const cache = new Map<string, CacheEntry>()
 
   ctx.command('群分析 [query:text]', '用 LLM 分析本群近期的聊天记录')
@@ -67,14 +73,21 @@ function applyAnalysisCommand(ctx: Context, config: Config) {
       const target = resolveTarget(session, channelId)
       const question = query?.trim()
 
+      log.info(`群分析由 ${session?.userId} 在 ${channelId} 发起，days=${days}，` +
+        `模式=${question ? `问答「${question}」` : '报告'}${options.force ? '，强制刷新' : ''}`)
+
       const cacheKey = `${channelId}:${days}`
       if (!question && !options.force && config.cacheMinutes > 0) {
         const cached = cache.get(cacheKey)
-        if (cached && cached.expireAt > Date.now()) return cached.report
+        if (cached && cached.expireAt > Date.now()) {
+          log.info(`命中群分析缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
+          return cached.report
+        }
       }
 
       const messages = await fetchMessages(ctx, config, target, days)
       if (messages.length < config.minMessages) {
+        log.info(`群分析中止: ${messages.length} 条记录不足 minMessages=${config.minMessages}`)
         return `最近 ${days} 天只有 ${messages.length} 条记录，不足 ${config.minMessages} 条，无法分析。`
       }
 
@@ -87,10 +100,11 @@ function applyAnalysisCommand(ctx: Context, config: Config) {
         const report = renderReport(await analyzeGroup(ctx, config, messages, target))
         if (config.cacheMinutes > 0) {
           cache.set(cacheKey, { report, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
+          log.debug(`群分析结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
         }
         return report
       } catch (error) {
-        ctx.logger.error('群分析执行失败:', error)
+        log.error('群分析执行失败:', error)
         return `群分析失败：${error instanceof Error ? error.message : String(error)}`
       }
     })
@@ -100,6 +114,7 @@ function applyAnalysisCommand(ctx: Context, config: Config) {
 
 /** 用户画像：跨群汇总某个用户的发言，交给 LLM 生成画像 */
 function applyPersonaCommand(ctx: Context, config: Config) {
+  const log = logger(ctx)
   ctx.command('用户画像 [target:user]', '用 LLM 生成指定用户的画像')
     .alias('user-persona')
     .usage([
@@ -112,10 +127,14 @@ function applyPersonaCommand(ctx: Context, config: Config) {
       if (!session?.userId) return '无法识别当前用户。'
 
       const userId = target?.split(':')[1] || session.userId
+      log.info(`用户画像由 ${session.userId} 发起，目标 ${userId}${options.force ? '，强制刷新' : ''}`)
+
       if (userId !== session.userId && (session.user?.authority ?? 0) < config.personaViewAuthority) {
+        log.info(`权限不足: ${session.userId} 权限 ${session.user?.authority ?? 0} < ${config.personaViewAuthority}，拒绝查看 ${userId}`)
         return `查看他人画像需要 ${config.personaViewAuthority} 级权限。`
       }
       if (config.personaUserFilter.includes(userId)) {
+        log.info(`${userId} 在 personaUserFilter 中，拒绝分析`)
         return '该用户已被设置为不参与画像分析。'
       }
 
@@ -142,7 +161,7 @@ function applyPersonaCommand(ctx: Context, config: Config) {
           : ''
         return report + note
       } catch (error) {
-        ctx.logger.error('用户画像生成失败:', error)
+        log.error('用户画像生成失败:', error)
         return `用户画像生成失败：${error instanceof Error ? error.message : String(error)}`
       }
     })
