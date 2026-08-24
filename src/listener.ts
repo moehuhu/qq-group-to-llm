@@ -5,7 +5,7 @@ import { MessageRecord, TABLE } from './model'
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
   if (!session.guildId || !session.channelId) return false
-  if (!config.recordBot && session.userId === session.selfId) return false
+  if (session.userId === session.selfId) return false
   if (config.listenAll) return true
   return config.groups.some((group) => {
     const [platform, channelId] = group.split(':')
@@ -57,6 +57,7 @@ function buildRecord(session: Session, config: Config): MessageRecord {
 export function applyMessageListener(ctx: Context, config: Config) {
   ctx.on('message', async (session) => {
     if (!shouldRecord(session, config)) return
+    console.log('session', session)
     try {
       await ctx.database.create(TABLE, buildRecord(session, config))
     } catch (error) {
