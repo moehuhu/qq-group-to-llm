@@ -1,4 +1,4 @@
-import { Context, Session } from 'koishi'
+import { Context, h, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { AnalysisTarget, analyzeGroup, answerQuery, fetchMessages, renderReport } from '../analysis'
@@ -7,6 +7,19 @@ import { AnalysisTarget, analyzeGroup, answerQuery, fetchMessages, renderReport 
 interface CacheEntry {
   expireAt: number
   report: string
+}
+
+/** QQ 单条 markdown 消息的最大建议长度 */
+const MARKDOWN_LIMIT = 2000
+
+/**
+ * 把文本包成 QQ markdown 消息。
+ * 内容超长时降级为纯文本，避免因超出 markdown 长度限制而发送失败。
+ */
+function toMarkdownMessage(content: string): string | h {
+  if (!content) return content
+  if (content.length > MARKDOWN_LIMIT) return content
+  return h('markdown', content)
 }
 
 /** 解析分析目标；群名优先取事件里的 guild.name，取不到时向平台查询 */
@@ -60,7 +73,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
         const cached = cache.get(cacheKey)
         if (cached && cached.expireAt > Date.now()) {
           log.info(`命中群分析缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
-          return cached.report
+          return toMarkdownMessage(cached.report)
         }
       }
 
@@ -74,14 +87,15 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
 
       try {
         if (question) {
-          return await answerQuery(ctx, messages, target, question)
+          const answer = await answerQuery(ctx, messages, target, question)
+          return toMarkdownMessage(answer)
         }
         const report = renderReport(await analyzeGroup(ctx, config, messages, target))
         if (config.cacheMinutes > 0) {
           cache.set(cacheKey, { report, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
           log.debug(`群分析结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
         }
-        return report
+        return toMarkdownMessage(report)
       } catch (error) {
         log.error('群分析执行失败:', error)
         return `群分析失败：${error instanceof Error ? error.message : String(error)}`
