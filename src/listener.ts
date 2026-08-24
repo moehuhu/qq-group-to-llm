@@ -38,7 +38,7 @@ export function applyMessageListener(ctx: Context, config: Config) {
     if (!shouldRecord(session, config)) return
     const record = buildRecord(session, config)
     try {
-      await ctx.database.create('chaoli_group_messages', record)
+      await ctx.database.create('qq_group_messages', record)
     } catch (error) {
       ctx.logger.warn('记录消息失败:', error)
     }

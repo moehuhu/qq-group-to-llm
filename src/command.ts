@@ -1,7 +1,7 @@
 import { Context } from 'koishi'
 import type { Config } from './types'
 
-const TABLE = 'chaoli_group_messages'
+const TABLE = 'qq_group_messages'
 
 /** 注册 msglog 命令，查询最近的消息记录 */
 export function applyQueryCommand(ctx: Context, config: Config) {

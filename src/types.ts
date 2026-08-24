@@ -30,6 +30,6 @@ export interface MessageRecord {
 
 declare module 'koishi' {
   interface Tables {
-    chaoli_group_messages: MessageRecord
+    qq_group_messages: MessageRecord
   }
 }

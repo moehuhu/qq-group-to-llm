@@ -10,7 +10,7 @@ export function applyRetentionCleanup(ctx: Context, config: Config) {
   ctx.setInterval(async () => {
     const cutoff = new Date(Date.now() - retentionMs)
     try {
-      await ctx.database.remove('chaoli_group_messages', { timestamp: { $lt: cutoff } })
+      await ctx.database.remove('qq_group_messages', { timestamp: { $lt: cutoff } })
     } catch (error) {
       ctx.logger.warn('清理过期消息失败:', error)
     }

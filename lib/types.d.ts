@@ -28,6 +28,6 @@ export interface MessageRecord {
 }
 declare module 'koishi' {
     interface Tables {
-        messages: MessageRecord;
+        qq_group_messages: MessageRecord;
     }
 }

@@ -10,7 +10,7 @@ export { configSchema as Config } from './config'
 export const name = 'message-log'
 export const inject = ['database'];
 export const apply = Object.assign(function apply(ctx: Context, config: Config) {
-  ctx.database.extend('chaoli_group_messages', {
+  ctx.database.extend('qq_group_messages', {
     id: 'string',
     platform: 'string',
     selfId: 'string',
