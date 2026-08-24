@@ -57,7 +57,6 @@ function buildRecord(session: Session, config: Config): MessageRecord {
 export function applyMessageListener(ctx: Context, config: Config) {
   ctx.on('message', async (session) => {
     if (!shouldRecord(session, config)) return
-    console.log('session', session)
     try {
       await ctx.database.create(TABLE, buildRecord(session, config))
     } catch (error) {
