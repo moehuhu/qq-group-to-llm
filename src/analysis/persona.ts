@@ -9,6 +9,8 @@ export interface PersonaTarget {
   platform: string
   userId: string
   username: string
+  /** 命令触发时抓到的头像地址，取不到时沿用库里已存的 */
+  avatar?: string
   /** 仅当 personaOnlyCurrentGroup 开启时用于限定范围 */
   channelId?: string
 }
@@ -108,6 +110,8 @@ const isFresh = (record: PersonaRecord | undefined, cacheDays: number) =>
 
 export interface PersonaOutcome {
   persona: UserPersonaProfile | null
+  /** 画像主人的头像地址，供渲染时展示 */
+  avatar?: string
   /** 直接复用了未过期的历史画像 */
   cached: boolean
   /** 用于本次分析的消息条数 */
@@ -134,7 +138,7 @@ export async function resolvePersona(
 
   if (!force && previous && isFresh(record, config.personaCacheDays)) {
     log.info(`命中画像缓存 ${id}（personaCacheDays=${config.personaCacheDays} 天内），跳过 LLM 调用`)
-    return { persona: previous, cached: true, messageCount: 0 }
+    return { persona: previous, avatar: target.avatar || record?.avatar, cached: true, messageCount: 0 }
   }
 
   const messages = await collectMessages(ctx, config, target)
@@ -144,6 +148,7 @@ export async function resolvePersona(
     // 记录不足但有历史画像时，返回旧的总比什么都没有好
     return {
       persona: previous,
+      avatar: target.avatar || record?.avatar,
       cached: !!previous,
       messageCount: messages.length,
       reason: `最近 ${config.personaLookbackDays} 天只有 ${messages.length} 条发言，` +
@@ -161,7 +166,13 @@ export async function resolvePersona(
 
   if (!generated) {
     log.warn(`${id} 的画像生成失败，${previous ? '保留历史画像' : '无历史画像可用'}`)
-    return { persona: previous, cached: !!previous, messageCount: messages.length, reason: 'LLM 未返回可用的画像结果' }
+    return {
+      persona: previous,
+      avatar: target.avatar || record?.avatar,
+      cached: !!previous,
+      messageCount: messages.length,
+      reason: 'LLM 未返回可用的画像结果',
+    }
   }
 
   // 丢弃模型编造的 msgid，只保留真实存在的引用
@@ -177,12 +188,15 @@ export async function resolvePersona(
   log.debug(`${id} 合并后画像: 特质 ${toArray(merged.keyTraits).length} 项 / ` +
     `兴趣 ${toArray(merged.interests).length} 项 / 证据 ${evidence.length}/${claimed.length} 条`)
 
+  // 本次没抓到头像时沿用库里的旧值，不要把已有的抹掉
+  const avatar = target.avatar || record?.avatar || ''
   const now = new Date()
   await ctx.database.upsert(PERSONA_TABLE, [{
     id,
     platform: target.platform,
     userId: target.userId,
     username,
+    avatar,
     persona: dump(merged, { indent: 2, lineWidth: -1, noRefs: true }),
     lastAnalysisAt: now,
     updatedAt: now,
@@ -190,7 +204,7 @@ export async function resolvePersona(
 
   log.info(`用户画像 ${id} 已更新（${merged.lastMergedFromHistory ? '基于历史迭代' : '首次生成'}），` +
     `基于 ${messages.length} 条发言，总耗时 ${Date.now() - startedAt}ms`)
-  return { persona: merged, cached: false, messageCount: messages.length }
+  return { persona: merged, avatar, cached: false, messageCount: messages.length }
 }
 
 /** 把 evidence 中的 messageId 回查成原文 */

@@ -25,6 +25,7 @@ export function extendModel(ctx: Context) {
     platform: 'string',
     userId: 'string',
     username: 'string',
+    avatar: 'text',
     persona: 'text',
     lastAnalysisAt: 'timestamp',
     updatedAt: 'timestamp',

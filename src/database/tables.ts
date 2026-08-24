@@ -23,6 +23,8 @@ export interface PersonaRecord {
   platform: string
   userId: string
   username: string
+  /** 头像地址，命令触发时从会话或平台接口取得 */
+  avatar: string
   persona: string
   lastAnalysisAt: Date
   updatedAt: Date

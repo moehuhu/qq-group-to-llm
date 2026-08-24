@@ -1,7 +1,23 @@
-import { Context } from 'koishi'
+import { Context, h, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { renderPersona, resolveEvidence, resolvePersona } from '../analysis'
+
+/**
+ * 取画像主人的头像。
+ * 命令发出者本人的头像直接来自会话；查看他人时才需要问平台，
+ * 拿不到就返回空，渲染时自动省略头像。
+ */
+async function resolveAvatar(session: Session, userId: string): Promise<string | undefined> {
+  if (userId === session.userId) return session.author?.avatar
+
+  try {
+    const user = await session.bot.getUser(userId, session.guildId)
+    return user?.avatar
+  } catch {
+    return undefined
+  }
+}
 
 /** 用户画像：跨群汇总某个用户的发言，交给 LLM 生成画像 */
 export function applyPersonaCommand(ctx: Context, config: Config) {
@@ -32,10 +48,14 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
       await session.send('正在生成用户画像，请稍候…')
 
       try {
+        const avatar = await resolveAvatar(session, userId)
+        log.info(`${userId} 的头像${avatar ? `已取到: ${avatar}` : '未取到，结果中不展示'}`)
+
         const outcome = await resolvePersona(ctx, config, {
           platform: session.platform,
           userId,
           username: userId === session.userId ? (session.username || userId) : userId,
+          avatar,
           channelId: session.channelId,
         }, options.force ?? false)
 
@@ -50,7 +70,11 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
             ? `\n\n（${outcome.reason}，展示的是此前的画像）`
             : '\n\n（复用了缓存的画像，可用 -f 强制重新生成）'
           : ''
-        return report + note
+
+        // 有头像就作为图片元素放在文字前面
+        return outcome.avatar
+          ? [h.image(outcome.avatar), '\n', report + note]
+          : report + note
       } catch (error) {
         log.error('用户画像生成失败:', error)
         return `用户画像生成失败：${error instanceof Error ? error.message : String(error)}`
