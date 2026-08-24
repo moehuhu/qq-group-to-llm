@@ -8,7 +8,8 @@ const toArray = (value: unknown): string[] =>
 /** 把分析结果渲染为纯文本报告 */
 export function renderReport(result: GroupAnalysisResult): string {
   const lines = [
-    `📊 群聊分析 · ${result.groupName}`,
+    `📊 群聊分析报告`,
+    `群聊标题: ${result.groupName}`,
     `时间范围: ${result.timeRange}`,
     `消息 ${result.totalMessages} 条 | 参与 ${result.totalParticipants} 人 | 共 ${result.totalChars} 字` +
       (result.mostActivePeriod ? ` | 最活跃时段 ${result.mostActivePeriod}` : ''),

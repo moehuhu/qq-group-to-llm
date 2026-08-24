@@ -9,11 +9,22 @@ interface CacheEntry {
   report: string
 }
 
-function resolveTarget(session: Session, channelId: string): AnalysisTarget {
+/** 解析分析目标；群名优先取事件里的 guild.name，取不到时向平台查询 */
+async function resolveTarget(ctx: Context, session: Session, channelId: string): Promise<AnalysisTarget> {
+  const log = logger(ctx)
+  let groupName = session.event?.guild?.name
+  if (!groupName && session.guildId) {
+    try {
+      groupName = (await session.bot.getGuild(session.guildId)).name
+      log.debug(`已通过平台接口取到群聊标题: ${groupName} (${session.guildId})`)
+    } catch (error) {
+      log.warn(`查询群 ${session.guildId} 名称失败，分析将回退使用群 ID:`, error)
+    }
+  }
   return {
     channelId,
     guildId: session.guildId,
-    groupName: session.event?.guild?.name,
+    groupName,
   }
 }
 
@@ -38,7 +49,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
       if (!channelId) return '请在群聊中使用，或用 -g 指定频道 ID。'
 
       const days = Math.min(Math.max(options.days ?? config.analysisDays, 1), 7)
-      const target = resolveTarget(session, channelId)
+      const target = await resolveTarget(ctx, session, channelId)
       const question = query?.trim()
 
       log.info(`群分析由 ${session.userId} 在 ${channelId} 发起，days=${days}，` +
