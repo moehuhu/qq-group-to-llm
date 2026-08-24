@@ -1,7 +1,7 @@
 import { Context, Service } from 'koishi'
 import { load } from 'js-yaml'
 import type { Config } from './config'
-import type { AnalysisContext, GoldenQuote, SummaryTopic } from './types'
+import type { AnalysisContext, GoldenQuote, SummaryTopic, UserPersonaProfile } from './types'
 
 /** 提示词占位符的统一填充 */
 function fill(template: string, values: Record<string, string>): string {
@@ -73,6 +73,29 @@ export class LLMService extends Service {
       messages,
       maxGoldenQuotes: String(this.config.maxGoldenQuotes),
     }), '金句提取')
+  }
+
+  /**
+   * 生成用户画像。传入历史画像时，模型会在其基础上迭代而非推倒重来。
+   * 返回 null 表示模型没有给出可用结果。
+   */
+  async analyzeUserPersona(input: {
+    userId: string
+    username: string
+    messages: string
+    previousAnalysis: string
+  }): Promise<UserPersonaProfile | null> {
+    const profiles = await this.chatYaml<UserPersonaProfile>(fill(this.config.promptUserPersona, {
+      messages: input.messages,
+      previousAnalysis: input.previousAnalysis,
+      userId: input.userId,
+      username: input.username,
+      lookbackDays: String(this.config.personaLookbackDays),
+    }), '用户画像')
+
+    const profile = profiles[0]
+    if (!profile?.summary) return null
+    return { ...profile, userId: input.userId, username: input.username }
   }
 
   /** 自然语言问答，返回纯文本 */

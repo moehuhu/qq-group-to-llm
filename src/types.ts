@@ -44,3 +44,20 @@ export interface GroupAnalysisResult {
   topics: SummaryTopic[]
   goldenQuotes: GoldenQuote[]
 }
+
+export interface UserPersonaProfile {
+  userId: string
+  username: string
+  /** 整体印象 */
+  summary: string
+  /** 核心性格特质 */
+  keyTraits: string[]
+  /** 关注的主题与爱好 */
+  interests: string[]
+  /** 表达风格与情绪倾向 */
+  communicationStyle: string
+  /** 支撑结论的原话，存 messageId；渲染时回查原文 */
+  evidence: string[]
+  /** 本次是否在历史画像基础上迭代 */
+  lastMergedFromHistory?: boolean
+}

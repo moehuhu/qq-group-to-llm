@@ -9,6 +9,7 @@ import { applyRetentionCleanup } from './cleanup'
 export { Config } from './config'
 export * from './model'
 export * from './types'
+export * from './persona'
 export { LLMService } from './llm'
 
 export const name = 'qq-group-to-llm'

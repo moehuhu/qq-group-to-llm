@@ -38,9 +38,25 @@ export interface Config {
   /** 最多生成的金句数 */
   maxGoldenQuotes: number
 
+  /** 画像回溯的天数窗口 */
+  personaLookbackDays: number
+  /** 单次画像最多取用的消息条数 */
+  personaMaxMessages: number
+  /** 触发画像分析所需的最少消息条数 */
+  personaMinMessages: number
+  /** 画像结果的复用天数，超期后再次请求会重新生成 */
+  personaCacheDays: number
+  /** 画像是否只统计当前频道（关闭则汇总所有已记录频道） */
+  personaOnlyCurrentGroup: boolean
+  /** 查看他人画像所需的最低权限等级 */
+  personaViewAuthority: number
+  /** 禁止分析画像的用户 ID */
+  personaUserFilter: string[]
+
   promptTopic: string
   promptGoldenQuotes: string
   promptQuery: string
+  promptUserPersona: string
 }
 
 export const Config: Schema<Config> = Schema.intersect([
@@ -69,6 +85,16 @@ export const Config: Schema<Config> = Schema.intersect([
     maxTopics: Schema.number().default(5).min(1).description('最多生成的话题数'),
     maxGoldenQuotes: Schema.number().default(3).min(0).description('最多生成的金句数'),
   }).description('分析设置'),
+
+  Schema.object({
+    personaLookbackDays: Schema.number().default(3).min(1).max(30).description('画像回溯的天数窗口'),
+    personaMaxMessages: Schema.number().default(300).min(50).max(2000).description('单次画像最多取用的消息条数（取最近的）'),
+    personaMinMessages: Schema.number().default(20).min(1).description('触发画像分析所需的最少消息条数'),
+    personaCacheDays: Schema.number().default(3).min(0).description('画像结果的复用天数，0 表示每次都重新生成'),
+    personaOnlyCurrentGroup: Schema.boolean().default(false).description('画像是否只统计当前频道（关闭则汇总该用户在所有已记录频道的发言）'),
+    personaViewAuthority: Schema.number().default(3).min(0).max(4).step(1).description('查看他人画像所需的最低权限等级（0=所有人, 1=用户, 2=协管, 3=管理员, 4=主人）'),
+    personaUserFilter: Schema.array(Schema.string()).default([]).description('禁止分析画像的用户 ID'),
+  }).description('用户画像'),
 
   Schema.object({
     promptTopic: Schema.string().role('textarea').description('话题总结提示词。占位符：{messages} {maxTopics} {groupName} {timeRange} {query}').default(
@@ -132,5 +158,42 @@ export const Config: Schema<Config> = Schema.intersect([
 {messages}
 
 用户问题：{query}`),
+
+    promptUserPersona: Schema.string().role('textarea').description('用户画像提示词。占位符：{messages} {previousAnalysis} {username} {userId} {lookbackDays}').default(
+`你是一名社群观察员。请基于该用户的聊天记录，给出一份中性、克制的用户画像。
+
+步骤：
+1. 先读「历史画像」理解已有结论；为空则从零开始
+2. 再读「最新聊天记录」，这是该用户最近 {lookbackDays} 天的发言
+3. 在历史画像基础上迭代：观点冲突时以新记录为准，历史中仍成立的结论予以保留
+
+要求：
+- 只写记录能支撑的结论，不要推测用户的真实身份、职业、住址等隐私信息
+- 保持中性描述，不做褒贬评价
+- 纯文本，不要 markdown 语法
+- evidence 只填记录中 <msgid:xxx> 里的 id 原文，挑 5-10 条最有代表性的，不要编造 id
+
+历史画像：
+{previousAnalysis}
+
+最新聊天记录：
+{messages}
+
+请严格按以下 YAML 格式返回，并放在 markdown 代码块中：
+\`\`\`yaml
+- userId: "{userId}"
+  username: "{username}"
+  summary: |-
+    整体印象，200 字以内
+  keyTraits:
+    - "性格特质"
+  interests:
+    - "关注的主题或爱好"
+  communicationStyle: |-
+    表达风格与情绪倾向，100 字以内
+  evidence:
+    - "msgid"
+  lastMergedFromHistory: true
+\`\`\``),
   }).description('提示词'),
 ])
