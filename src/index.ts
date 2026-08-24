@@ -1,31 +1,19 @@
 import { Context } from 'koishi'
-import type { Config } from './types'
+import type { Config } from './config'
+import { extendModel } from './model'
 import { applyMessageListener } from './listener'
 import { applyQueryCommand } from './command'
 import { applyRetentionCleanup } from './cleanup'
 
-export * from './types'
-export { configSchema as Config } from './config'
+export { Config } from './config'
+export * from './model'
 
-export const name = 'message-log'
-export const inject = ['database'];
-export const apply = Object.assign(function apply(ctx: Context, config: Config) {
-  ctx.database.extend('qq_group_messages', {
-    id: 'string',
-    platform: 'string',
-    selfId: 'string',
-    channelId: 'string',
-    guildId: 'string',
-    userId: 'string',
-    username: 'string',
-    content: 'text',
-    timestamp: 'timestamp',
-    messageId: 'string',
-  }, {
-    primary: 'id',
-  })
+export const name = 'qq-group-to-llm'
+export const inject = ['database']
 
+export function apply(ctx: Context, config: Config) {
+  extendModel(ctx)
   applyMessageListener(ctx, config)
   applyQueryCommand(ctx, config)
   applyRetentionCleanup(ctx, config)
-})
+}

@@ -1,7 +1,6 @@
 import { Context } from 'koishi'
-import type { Config } from './types'
-
-const TABLE = 'qq_group_messages'
+import type { Config } from './config'
+import { TABLE } from './model'
 
 /** 注册 msglog 命令，查询最近的消息记录 */
 export function applyQueryCommand(ctx: Context, config: Config) {
@@ -11,14 +10,9 @@ export function applyQueryCommand(ctx: Context, config: Config) {
     .action(async ({ options, session }, count) => {
       const limit = Math.min(Math.max(count ?? config.maxQuery, 1), config.maxQuery)
       const query: Record<string, string> = {}
-      if (options?.group) {
-        query.channelId = options.group
-      } else if (session?.channelId) {
-        query.channelId = session.channelId
-      }
-      if (options?.user) {
-        query.userId = options.user
-      }
+      const channelId = options?.group || session?.channelId
+      if (channelId) query.channelId = channelId
+      if (options?.user) query.userId = options.user
 
       const records = await ctx.database
         .select(TABLE)
