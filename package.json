@@ -1,11 +1,12 @@
 {
   "name": "koishi-plugin-qq-group-to-llm",
-  "description": "",
+  "description": "记录 QQ 群消息并提供给 LLM 使用",
   "version": "0.0.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
+    "src",
     "dist"
   ],
   "license": "MIT",
@@ -16,5 +17,15 @@
   ],
   "peerDependencies": {
     "koishi": "^4.18.7"
+  },
+  "koishi": {
+    "description": {
+      "zh": "记录 QQ 群消息并提供给 LLM 使用"
+    },
+    "service": {
+      "required": [
+        "database"
+      ]
+    }
   }
 }
