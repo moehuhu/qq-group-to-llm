@@ -1,7 +1,7 @@
 import { Context, Element, Session } from 'koishi'
-import type { Config } from './config'
-import { MessageRecord, TABLE } from './model'
-import { logger } from './logger'
+import type { Config } from '../config'
+import { MessageRecord, TABLE } from '../database'
+import { logger } from '../logger'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {

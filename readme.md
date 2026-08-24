@@ -55,16 +55,32 @@ msglog 20 -u <用户 ID>        # 查看原始记录
 
 ## 目录结构
 
-| 文件 | 职责 |
-| --- | --- |
-| `src/index.ts` | 插件入口，装配各模块 |
-| `src/config.ts` | 配置项接口与 Schema（含提示词模板） |
-| `src/model.ts` | `qq_group_messages` / `qq_group_personas` 表结构 |
-| `src/types.ts` | 分析结果的领域类型 |
-| `src/listener.ts` | 消息监听、过滤与序列化 |
-| `src/llm.ts` | `LLMService`：OpenAI 兼容调用与 YAML 解析 |
-| `src/analysis.ts` | 群分析：取数、统计、编排 LLM、渲染报告 |
-| `src/persona.ts` | 用户画像：取数、历史合并、落库、证据回查 |
-| `src/command.ts` | `msglog`、`群分析`、`用户画像` 命令 |
-| `src/cleanup.ts` | 过期消息清理定时任务 |
-| `src/logger.ts` | 具名 logger，统一日志来源 |
+```
+src/
+├── index.ts            插件入口：装配各模块
+├── types.ts            跨模块共享的领域类型
+├── logger.ts           具名 logger，统一日志来源
+├── config/
+│   ├── index.ts        配置接口与 Schema
+│   └── prompts.ts      提示词模板默认值
+├── database/
+│   ├── index.ts        建表
+│   └── tables.ts       表名常量与记录类型
+├── llm/
+│   ├── index.ts        LLMService：OpenAI 兼容调用
+│   └── prompt.ts       占位符填充、YAML 提取等纯函数
+├── message/
+│   ├── recorder.ts     消息监听、过滤与序列化
+│   └── retention.ts    过期消息清理
+├── analysis/
+│   ├── group.ts        群分析编排
+│   ├── persona.ts      用户画像编排
+│   ├── stats.ts        发言统计（纯函数）
+│   └── report.ts       文本报告渲染（纯函数）
+└── commands/
+    ├── msglog.ts       原始记录查询
+    ├── analysis.ts     群分析 / 自由问答
+    └── persona.ts      用户画像
+```
+
+依赖是单向的：`logger` 和 `types` 是叶子，`config`、`database` 只依赖它们，`llm` 与 `message` 建立在这之上，`analysis` 再往上，`commands` 位于最外层。统计与渲染被拆成不依赖 `Context` 的纯函数，可以脱离 Koishi 单独测试。

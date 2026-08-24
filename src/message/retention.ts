@@ -1,7 +1,7 @@
 import { Context } from 'koishi'
-import type { Config } from './config'
-import { TABLE } from './model'
-import { logger } from './logger'
+import type { Config } from '../config'
+import { TABLE } from '../database'
+import { logger } from '../logger'
 
 const CLEAN_INTERVAL = 6 * 60 * 60 * 1000 // 每 6 小时执行一次
 

@@ -1,17 +1,9 @@
 import { Context, Service } from 'koishi'
 import { load } from 'js-yaml'
-import type { Config } from './config'
-import { logger } from './logger'
-import type { AnalysisContext, GoldenQuote, SummaryTopic, UserPersonaProfile } from './types'
-
-/** 提示词占位符的统一填充 */
-function fill(template: string, values: Record<string, string>): string {
-  const filled = Object.entries(values).reduce(
-    (text, [key, value]) => text.replaceAll(`{${key}}`, value),
-    template,
-  )
-  return filled
-}
+import type { Config } from '../config'
+import { logger } from '../logger'
+import type { AnalysisContext, GoldenQuote, SummaryTopic, UserPersonaProfile } from '../types'
+import { extractYaml, fill, findLeftovers, formatUsage } from './prompt'
 
 export class LLMService extends Service {
   static inject = ['http']
@@ -30,9 +22,9 @@ export class LLMService extends Service {
     }
 
     const url = `${this.config.openaiEndpoint.replace(/\/+$/, '')}/chat/completions`
-    const leftovers = prompt.match(/\{[a-zA-Z]\w*\}/g)
-    if (leftovers?.length) {
-      this.log.warn(`[${task}] 提示词存在未替换的占位符: ${[...new Set(leftovers)].join(' ')}`)
+    const leftovers = findLeftovers(prompt)
+    if (leftovers.length) {
+      this.log.warn(`[${task}] 提示词存在未替换的占位符: ${leftovers.join(' ')}`)
     }
 
     this.log.info(`[${task}] 请求 ${this.config.openaiModel}，提示词 ${prompt.length} 字，temperature=${this.config.temperature}`)
@@ -63,11 +55,7 @@ export class LLMService extends Service {
       throw new Error(`LLM 返回空响应（${task}）`)
     }
 
-    const usage = response.usage
-    const tokens = usage
-      ? `tokens ${usage.prompt_tokens ?? '?'}+${usage.completion_tokens ?? '?'}=${usage.total_tokens ?? '?'}`
-      : 'tokens 未返回'
-    this.log.info(`[${task}] 完成，耗时 ${elapsed}ms，响应 ${content.length} 字，${tokens}`)
+    this.log.info(`[${task}] 完成，耗时 ${elapsed}ms，响应 ${content.length} 字，${formatUsage(response.usage)}`)
     this.log.debug(`[${task}] 完整响应:\n${content}`)
 
     return content
@@ -76,17 +64,17 @@ export class LLMService extends Service {
   /** 调用并解析 markdown 代码块中的 YAML */
   private async chatYaml<T>(prompt: string, task: string): Promise<T[]> {
     const raw = await this.chat(prompt, task)
-    const match = raw.match(/```ya?ml\s*([\s\S]*?)\s*```/)
-    if (!match) {
+    const yaml = extractYaml(raw)
+    if (yaml === null) {
       this.log.warn(`[${task}] 未返回 YAML 代码块，原始响应: ${raw.slice(0, 300)}`)
       throw new Error(`LLM 未按格式返回结果（${task}）`)
     }
 
     let data: T | T[]
     try {
-      data = load(match[1]) as T | T[]
+      data = load(yaml) as T | T[]
     } catch (error) {
-      this.log.error(`[${task}] YAML 解析失败，内容:\n${match[1].slice(0, 500)}`)
+      this.log.error(`[${task}] YAML 解析失败，内容:\n${yaml.slice(0, 500)}`)
       throw error
     }
 

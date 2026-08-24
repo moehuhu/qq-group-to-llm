@@ -1,9 +1,9 @@
 import { Context } from 'koishi'
 import { dump, load } from 'js-yaml'
-import type { Config } from './config'
-import { logger } from './logger'
-import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from './model'
-import type { UserPersonaProfile } from './types'
+import type { Config } from '../config'
+import { logger } from '../logger'
+import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
+import type { UserPersonaProfile } from '../types'
 
 export interface PersonaTarget {
   platform: string
@@ -191,28 +191,6 @@ export async function resolvePersona(
   log.info(`用户画像 ${id} 已更新（${merged.lastMergedFromHistory ? '基于历史迭代' : '首次生成'}），` +
     `基于 ${messages.length} 条发言，总耗时 ${Date.now() - startedAt}ms`)
   return { persona: merged, cached: false, messageCount: messages.length }
-}
-
-/** 把画像渲染为纯文本 */
-export function renderPersona(persona: UserPersonaProfile, evidenceText: string[] = []): string {
-  const lines = [`🪞 用户画像 · ${persona.username || persona.userId}`, '', persona.summary?.trim() || '（无总结）']
-
-  const traits = toArray(persona.keyTraits)
-  if (traits.length) lines.push('', `🏷 性格特质：${traits.join('、')}`)
-
-  const interests = toArray(persona.interests)
-  if (interests.length) lines.push('', `🎯 关注领域：${interests.join('、')}`)
-
-  if (persona.communicationStyle?.trim()) {
-    lines.push('', `🗣 表达风格：${persona.communicationStyle.trim()}`)
-  }
-
-  if (evidenceText.length) {
-    lines.push('', '📌 代表发言')
-    for (const quote of evidenceText) lines.push(`· ${quote}`)
-  }
-
-  return lines.join('\n')
 }
 
 /** 把 evidence 中的 messageId 回查成原文 */

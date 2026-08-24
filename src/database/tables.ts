@@ -1,4 +1,4 @@
-import { Context } from 'koishi'
+/** 数据表名与记录类型；建表逻辑见 ./index.ts */
 
 export const TABLE = 'qq_group_messages'
 export const PERSONA_TABLE = 'qq_group_personas'
@@ -33,34 +33,4 @@ declare module 'koishi' {
     qq_group_messages: MessageRecord
     qq_group_personas: PersonaRecord
   }
-}
-
-/** 声明消息记录表结构 */
-export function extendModel(ctx: Context) {
-  ctx.database.extend(TABLE, {
-    id: 'string',
-    platform: 'string',
-    selfId: 'string',
-    channelId: 'string',
-    guildId: 'string',
-    userId: 'string',
-    username: 'string',
-    content: 'text',
-    timestamp: 'timestamp',
-    messageId: 'string',
-  }, {
-    primary: 'id',
-  })
-
-  ctx.database.extend(PERSONA_TABLE, {
-    id: 'string',
-    platform: 'string',
-    userId: 'string',
-    username: 'string',
-    persona: 'text',
-    lastAnalysisAt: 'timestamp',
-    updatedAt: 'timestamp',
-  }, {
-    primary: 'id',
-  })
 }
