@@ -1,5 +1,5 @@
 {
-  "name": "koishi-plugin-qq-group-to-chaoli",
+  "name": "koishi-plugin-qq-group-to-llm",
   "description": "",
   "version": "0.0.1",
   "main": "lib/index.js",
