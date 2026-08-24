@@ -51,12 +51,12 @@ export class LLMService extends Service {
     const elapsed = Date.now() - startedAt
     const content = response?.choices?.[0]?.message?.content
     if (!content) {
-      this.log.error(`[${task}] 返回空响应（耗时 ${elapsed}ms）:`, JSON.stringify(response)?.slice(0, 500))
+      this.log.error(`[${task}] 返回空响应（耗时 ${elapsed}ms），完整响应体:\n${JSON.stringify(response, null, 2)}`)
       throw new Error(`LLM 返回空响应（${task}）`)
     }
 
     this.log.info(`[${task}] 完成，耗时 ${elapsed}ms，响应 ${content.length} 字，${formatUsage(response.usage)}`)
-    this.log.debug(`[${task}] 完整响应:\n${content}`)
+    this.log.info(`[${task}] 完整响应:\n${content}`)
 
     return content
   }
@@ -66,7 +66,7 @@ export class LLMService extends Service {
     const raw = await this.chat(prompt, task)
     const yaml = extractYaml(raw)
     if (yaml === null) {
-      this.log.warn(`[${task}] 未返回 YAML 代码块，原始响应: ${raw.slice(0, 300)}`)
+      this.log.warn(`[${task}] 未返回 YAML 代码块，完整响应:\n${raw}`)
       throw new Error(`LLM 未按格式返回结果（${task}）`)
     }
 
@@ -74,7 +74,7 @@ export class LLMService extends Service {
     try {
       data = load(yaml) as T | T[]
     } catch (error) {
-      this.log.error(`[${task}] YAML 解析失败，内容:\n${yaml.slice(0, 500)}`)
+      this.log.error(`[${task}] YAML 解析失败，完整 YAML:\n${yaml}`)
       throw error
     }
 
@@ -83,7 +83,7 @@ export class LLMService extends Service {
       return []
     }
     const list = Array.isArray(data) ? data : [data]
-    this.log.debug(`[${task}] 解析出 ${list.length} 条结果`)
+    this.log.info(`[${task}] 解析出 ${list.length} 条结果:\n${JSON.stringify(list, null, 2)}`)
     return list
   }
 
