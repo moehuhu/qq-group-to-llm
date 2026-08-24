@@ -30,7 +30,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
     ].join('\n'))
     .option('force', '-f  忽略缓存重新生成')
     .userFields(['authority'])
-    .action(async ({ options, session }, target) => {
+    .action(async ({ options = {}, session }, target) => {
       if (!session?.userId) return '无法识别当前用户。'
 
       const userId = target?.split(':')[1] || session.userId

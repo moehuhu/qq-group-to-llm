@@ -31,15 +31,17 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
     .option('days', '-d <days:number>  分析最近几天的记录')
     .option('group', '-g <group:string>  指定频道 ID')
     .option('force', '-f  忽略缓存重新分析')
-    .action(async ({ options, session }, query) => {
-      const channelId = options.group || session?.channelId
+    .action(async ({ options = {}, session }, query) => {
+      if (!session) return
+
+      const channelId = options.group || session.channelId
       if (!channelId) return '请在群聊中使用，或用 -g 指定频道 ID。'
 
       const days = Math.min(Math.max(options.days ?? config.analysisDays, 1), 7)
       const target = resolveTarget(session, channelId)
       const question = query?.trim()
 
-      log.info(`群分析由 ${session?.userId} 在 ${channelId} 发起，days=${days}，` +
+      log.info(`群分析由 ${session.userId} 在 ${channelId} 发起，days=${days}，` +
         `模式=${question ? `问答「${question}」` : '报告'}${options.force ? '，强制刷新' : ''}`)
 
       const cacheKey = `${channelId}:${days}`
