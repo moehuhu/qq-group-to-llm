@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import type { Config } from '../config'
 import { TABLE } from '../database'
 import { logger } from '../logger'
+import { escapeMarkdown, toMarkdownMessage } from '../markdown'
 
 /** msglog：查询最近的原始消息记录 */
 export function applyLogCommand(ctx: Context, config: Config) {
@@ -28,9 +29,12 @@ export function applyLogCommand(ctx: Context, config: Config) {
       log.info(`msglog 返回 ${records.length} 条记录`)
       if (!records.length) return '暂无消息记录'
 
-      return records.map((record) => {
+      const lines = ['# 📜 最近消息记录', '']
+      for (const record of records) {
         const time = record.timestamp.toLocaleString('zh-CN', { hour12: false })
-        return `[${time}] ${record.username || record.userId}: ${record.content}`
-      }).join('\n')
+        lines.push(`- **${escapeMarkdown(record.username || record.userId)}** (${time})`)
+        lines.push(`  ${escapeMarkdown(record.content)}`)
+      }
+      return toMarkdownMessage(lines.join('\n'))
     })
 }

@@ -1,6 +1,7 @@
 import { Context, h, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
+import { toMarkdownMessage } from '../markdown'
 import { renderPersona, resolveEvidence, resolvePersona } from '../analysis'
 
 /**
@@ -71,10 +72,11 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
             : '\n\n（复用了缓存的画像，可用 -f 强制重新生成）'
           : ''
 
-        // 有头像就作为图片元素放在文字前面
+        // 有头像就作为图片元素放在 markdown 文本前面
+        const content = toMarkdownMessage(report + note)
         return outcome.avatar
-          ? [h.image(outcome.avatar), '\n', report + note]
-          : report + note
+          ? [h.image(outcome.avatar), content]
+          : content
       } catch (error) {
         log.error('用户画像生成失败:', error)
         return `用户画像生成失败：${error instanceof Error ? error.message : String(error)}`

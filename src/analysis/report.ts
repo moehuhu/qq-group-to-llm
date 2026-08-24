@@ -6,16 +6,10 @@
  * - 单条 markdown 消息建议不超过 2000 字符
  */
 import type { GroupAnalysisResult, UserPersonaProfile } from '../types'
+import { escapeMarkdown } from '../markdown'
 
 const toArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String).filter(Boolean) : []
-
-/** 转义 QQ markdown 中的特殊字符，避免内容破坏结构 */
-function escapeMarkdown(value: string): string {
-  return value
-    .replace(/([\\`*_[\]~#!>|])/g, '\\$&')
-    .replace(/\n/g, ' ')
-}
 
 /** 把分析结果渲染为 markdown 报告 */
 export function renderReport(result: GroupAnalysisResult): string {
@@ -65,24 +59,31 @@ export function renderReport(result: GroupAnalysisResult): string {
   return lines.join('\n')
 }
 
-/** 把画像渲染为纯文本 */
+/** 把画像渲染为 markdown 文本 */
 export function renderPersona(persona: UserPersonaProfile, evidenceText: string[] = []): string {
-  const lines = [`🪞 用户画像 · ${persona.username || persona.userId}`, '', persona.summary?.trim() || '（无总结）']
+  const lines: string[] = []
+  lines.push(`# 🪞 用户画像 · ${escapeMarkdown(persona.username || persona.userId)}`)
+  lines.push('')
+  lines.push(escapeMarkdown(persona.summary?.trim() || '（无总结）'))
+  lines.push('')
 
   const traits = toArray(persona.keyTraits)
-  if (traits.length) lines.push('', `🏷 性格特质：${traits.join('、')}`)
+  if (traits.length) lines.push(`**🏷 性格特质：** ${escapeMarkdown(traits.join('、'))}`)
 
   const interests = toArray(persona.interests)
-  if (interests.length) lines.push('', `🎯 关注领域：${interests.join('、')}`)
+  if (interests.length) lines.push(`**🎯 关注领域：** ${escapeMarkdown(interests.join('、'))}`)
 
   if (persona.communicationStyle?.trim()) {
-    lines.push('', `🗣 表达风格：${persona.communicationStyle.trim()}`)
+    lines.push(`**🗣 表达风格：** ${escapeMarkdown(persona.communicationStyle.trim())}`)
   }
 
   if (evidenceText.length) {
-    lines.push('', '📌 代表发言')
-    for (const quote of evidenceText) lines.push(`· ${quote}`)
+    lines.push('', '**📌 代表发言**')
+    for (const quote of evidenceText) {
+      lines.push(`> ${escapeMarkdown(quote)}`)
+    }
   }
 
+  while (lines.length && lines[lines.length - 1] === '') lines.pop()
   return lines.join('\n')
 }

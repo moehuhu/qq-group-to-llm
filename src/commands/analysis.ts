@@ -1,25 +1,13 @@
-import { Context, h, Session } from 'koishi'
+import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
+import { toMarkdownMessage } from '../markdown'
 import { AnalysisTarget, analyzeGroup, answerQuery, fetchMessages, renderReport } from '../analysis'
 
 /** 分析结果缓存，键为 频道:天数 */
 interface CacheEntry {
   expireAt: number
   report: string
-}
-
-/** QQ 单条 markdown 消息的最大建议长度 */
-const MARKDOWN_LIMIT = 2000
-
-/**
- * 把文本包成 QQ markdown 消息。
- * 内容超长时降级为纯文本，避免因超出 markdown 长度限制而发送失败。
- */
-function toMarkdownMessage(content: string): string | h {
-  if (!content) return content
-  if (content.length > MARKDOWN_LIMIT) return content
-  return h('markdown', content)
 }
 
 /** 解析分析目标；群名优先取事件里的 guild.name，取不到时向平台查询 */
