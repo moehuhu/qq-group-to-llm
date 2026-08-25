@@ -2,7 +2,7 @@ import { Context, Service } from 'koishi'
 import { load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
-import type { AnalysisContext, GoldenQuote, SummaryTopic, UserPersonaProfile } from '../types'
+import type { AnalysisContext, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
 import { extractYaml, fill, findLeftovers, formatUsage } from './prompt'
 
 export class LLMService extends Service {
@@ -95,12 +95,14 @@ export class LLMService extends Service {
     }), '话题总结')
   }
 
-  async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<GoldenQuote[]> {
-    return this.chatYaml<GoldenQuote>(fill(this.config.promptGoldenQuotes, {
+  /** 截取带学术要素的冷幽默对话片段，模型认为没有符合条件的片段时返回空数组 */
+  async analyzeHighlights(messages: string, context: AnalysisContext): Promise<HighlightDialogue[]> {
+    return this.chatYaml<HighlightDialogue>(fill(this.config.promptHighlights, {
       ...context,
       messages,
-      maxGoldenQuotes: String(this.config.maxGoldenQuotes),
-    }), '金句提取')
+      maxHighlights: String(this.config.maxHighlights),
+      maxHighlightLines: String(this.config.maxHighlightLines),
+    }), '高光对话')
   }
 
   /**

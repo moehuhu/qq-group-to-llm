@@ -5,7 +5,7 @@ import { calculateStats } from './stats'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
-  GoldenQuote,
+  HighlightDialogue,
   GroupAnalysisResult,
   SummaryTopic,
 } from '../types'
@@ -47,6 +47,34 @@ export function formatForPrompt(messages: MessageRecord[]): string {
   }).join('\n')
 }
 
+/**
+ * 规整模型返回的高光对话：丢掉空轮次、按 maxHighlightLines 截断，
+ * 并要求至少两人两轮——只有一个人自说自话的片段不算「对话」。
+ * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
+ */
+export function normalizeHighlight(
+  item: HighlightDialogue | undefined,
+  maxLines: number,
+): HighlightDialogue | null {
+  const lines = (Array.isArray(item?.lines) ? item.lines : [])
+    .map((line) => ({
+      sender: String(line?.sender ?? '').trim(),
+      content: String(line?.content ?? '').trim(),
+    }))
+    .filter((line) => line.content)
+    .slice(0, maxLines)
+
+  if (lines.length < 2) return null
+  if (new Set(lines.map((line) => line.sender)).size < 2) return null
+
+  return {
+    title: item?.title?.trim() || undefined,
+    lines,
+    academicPoint: item?.academicPoint?.trim() || undefined,
+    reason: item?.reason?.trim() || undefined,
+  }
+}
+
 function buildContext(messages: MessageRecord[], target: AnalysisTarget, query = ''): AnalysisContext {
   return {
     groupName: target.groupName || target.guildId || target.channelId,
@@ -84,20 +112,23 @@ export async function analyzeGroup(
     }
   }
 
-  const [topics, goldenQuotes] = await Promise.all([
+  const [topics, highlights] = await Promise.all([
     settle<SummaryTopic>(ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
-    config.maxGoldenQuotes > 0
-      ? settle<GoldenQuote>(ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
+    config.maxHighlights > 0
+      ? settle<HighlightDialogue>(ctx.qqGroupLlm.analyzeHighlights(messagesText, context), '高光对话')
       : Promise.resolve([]),
   ])
 
   // 模型偶尔会漏字段，缺主键的条目直接丢弃，避免污染报告
   const usableTopics = topics.filter((topic) => topic?.topic)
-  const usableQuotes = goldenQuotes.filter((quote) => quote?.content)
-  const dropped = (topics.length - usableTopics.length) + (goldenQuotes.length - usableQuotes.length)
-  if (dropped) log.warn(`丢弃 ${dropped} 条缺少必要字段的 LLM 结果`)
+  const usableHighlights = highlights
+    .map((item) => normalizeHighlight(item, config.maxHighlightLines))
+    .filter((item): item is HighlightDialogue => !!item)
+  const dropped = (topics.length - usableTopics.length) + (highlights.length - usableHighlights.length)
+  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段，或不足两人两轮的高光对话）`)
 
-  log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${usableTopics.length} 个话题 / ${usableQuotes.length} 条金句`)
+  log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${usableTopics.length} 个话题 / ` +
+    `${usableHighlights.length} 段高光对话`)
 
   return {
     groupName: context.groupName,
@@ -108,7 +139,7 @@ export async function analyzeGroup(
     mostActivePeriod,
     userStats: userStats.slice(0, config.maxUsersInReport),
     topics: usableTopics.slice(0, config.maxTopics),
-    goldenQuotes: usableQuotes.slice(0, config.maxGoldenQuotes),
+    highlights: usableHighlights.slice(0, config.maxHighlights),
   }
 }
 

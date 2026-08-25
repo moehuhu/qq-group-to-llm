@@ -37,11 +37,16 @@ export function renderReport(result: GroupAnalysisResult): string {
     lines.push('')
   }
 
-  if (result.goldenQuotes.length) {
-    lines.push(`## ✨ 群圣经`)
-    for (const quote of result.goldenQuotes) {
-      lines.push(`> ${escapeMarkdown(quote.content?.trim() ?? '')} —— ${escapeMarkdown(quote.sender || '匿名')}`)
-      if (quote.reason?.trim()) lines.push(`> ${escapeMarkdown(quote.reason.trim())}`)
+  if (result.highlights.length) {
+    lines.push(`## 🧊 高光对话`)
+    for (const highlight of result.highlights) {
+      if (highlight.title) lines.push(`**${escapeMarkdown(highlight.title)}**`)
+      // 逐轮渲染，保留一来一回的节奏——冷幽默的笑点常常只在上下文里成立
+      for (const line of highlight.lines) {
+        lines.push(`> **${escapeMarkdown(line.sender || '匿名')}：**${escapeMarkdown(line.content)}`)
+      }
+      if (highlight.academicPoint) lines.push(`**🎓 学术要素：** ${escapeMarkdown(highlight.academicPoint)}`)
+      if (highlight.reason) lines.push(`**❄️ 冷在哪：** ${escapeMarkdown(highlight.reason)}`)
       lines.push('')
     }
   }

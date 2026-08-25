@@ -12,9 +12,24 @@ export interface SummaryTopic {
   detail?: string
 }
 
-export interface GoldenQuote {
+/** 高光对话里的一轮发言 */
+export interface HighlightLine {
+  sender: string
   content: string
-  sender?: string
+}
+
+/**
+ * 一段「高光对话」：带学术要素的冷幽默群聊片段。
+ * 与单条金句不同，它保留多轮上下文——笑点往往在一来一回之间才成立。
+ */
+export interface HighlightDialogue {
+  /** 一句话概括这段对话在聊什么 */
+  title?: string
+  /** 按原始时间正序的对话轮次 */
+  lines: HighlightLine[]
+  /** 涉及的学科与具体概念 */
+  academicPoint?: string
+  /** 冷幽默的笑点所在 */
   reason?: string
 }
 
@@ -42,7 +57,7 @@ export interface GroupAnalysisResult {
   mostActivePeriod?: string
   userStats: UserStats[]
   topics: SummaryTopic[]
-  goldenQuotes: GoldenQuote[]
+  highlights: HighlightDialogue[]
 }
 
 export interface UserPersonaProfile {
