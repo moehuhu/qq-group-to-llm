@@ -6,12 +6,14 @@ import { LLMService } from './llm'
 import { applyMessageListener } from './message/recorder'
 import { applyRetentionCleanup } from './message/retention'
 import { applyCommands } from './commands'
+import { createTimeFormatter } from './time'
 
 export { Config } from './config'
 export * from './database'
 export * from './types'
 export * from './analysis'
 export * from './render'
+export * from './time'
 export { LLMService } from './llm'
 
 export const name = 'qq-group-to-llm'
@@ -26,6 +28,8 @@ export function apply(ctx: Context, config: Config) {
   log.info(`插件启动 | 模型 ${config.openaiModel} @ ${config.openaiEndpoint}` +
     `，并发上限 ${config.llmConcurrency}，${config.llmStream ? '流式' : '非流式'}，重试 ${config.llmRetries} 次` +
     `${config.openaiApiKey ? '' : '（未配置 API Key，分析类命令不可用）'}`)
+  log.info(`时区 | ${config.timezone || '跟随系统'}（当前 ${
+    createTimeFormatter(config.timezone).dateTime(new Date())}）`)
   log.info(`结果出口 | ${config.renderImage
     ? `图片（${config.imageWidth}px @${config.imageScale}x）${ctx.puppeteer ? '' : '，但 puppeteer 未就绪，将回退为文字'}`
     : '文字'}`)

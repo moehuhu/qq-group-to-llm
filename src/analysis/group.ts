@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { calculateStats } from './stats'
+import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
@@ -18,7 +19,6 @@ export interface AnalysisTarget {
   groupName?: string
 }
 
-const formatTime = (date: Date) => date.toLocaleString('zh-CN', { hour12: false })
 
 /** 取指定频道最近 days 天的消息，按时间正序返回 */
 export async function fetchMessages(
@@ -65,10 +65,9 @@ export function blockedNames(messages: MessageRecord[], blocked: string[]): Set<
 }
 
 /** 把消息渲染成投喂给 LLM 的文本 */
-export function formatForPrompt(messages: MessageRecord[]): string {
+export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
   return messages.map((message) => {
-    const time = message.timestamp.toLocaleTimeString('zh-CN', { hour12: false })
-    return `[${time}] ${message.username || message.userId}: ${message.content}`
+    return `[${time.time(message.timestamp)}] ${message.username || message.userId}: ${message.content}`
   }).join('\n')
 }
 
@@ -118,13 +117,18 @@ export function normalizeDialogue(
   }
 }
 
-function buildContext(messages: MessageRecord[], target: AnalysisTarget, query = ''): AnalysisContext {
+function buildContext(
+  messages: MessageRecord[],
+  target: AnalysisTarget,
+  time: TimeFormatter,
+  query = '',
+): AnalysisContext {
   return {
     groupName: target.groupName || target.guildId || target.channelId,
     timeRange: messages.length
-      ? `${formatTime(messages[0].timestamp)} ~ ${formatTime(messages[messages.length - 1].timestamp)}`
+      ? `${time.dateTime(messages[0].timestamp)} ~ ${time.dateTime(messages[messages.length - 1].timestamp)}`
       : '（无记录）',
-    currentTime: formatTime(new Date()),
+    currentTime: time.dateTime(new Date()),
     query: query || '（无）',
   }
 }
@@ -152,9 +156,10 @@ export async function analyzeGroup(
     log.info(`金句屏蔽了 ${messages.length - quoteMessages.length} 条发言`)
   }
 
-  const context = buildContext(analysisMessages, target, query)
-  const messagesText = formatForPrompt(analysisMessages)
-  const { userStats, totalChars, mostActivePeriod, hourly } = calculateStats(analysisMessages)
+  const time = resolveTimeFormatter(ctx, config.timezone)
+  const context = buildContext(analysisMessages, target, time, query)
+  const messagesText = formatForPrompt(analysisMessages, time)
+  const { userStats, totalChars, mostActivePeriod, hourly } = calculateStats(analysisMessages, time)
 
   log.info(`开始群分析: ${context.groupName}，${analysisMessages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
@@ -175,7 +180,7 @@ export async function analyzeGroup(
     settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
     config.maxGoldenQuotes > 0
       ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(
-        formatForPrompt(quoteMessages), buildContext(quoteMessages, target, query)), '金句提取')
+        formatForPrompt(quoteMessages, time), buildContext(quoteMessages, target, time, query)), '金句提取')
       : Promise.resolve([]),
   ])
 
@@ -225,8 +230,9 @@ export async function analyzeDialogues(
     log.info(`高光对话屏蔽了 ${messages.length - usable.length} 条发言`)
   }
 
-  const context = buildContext(usable, target)
-  const messagesText = formatForPrompt(usable)
+  const time = resolveTimeFormatter(ctx, config.timezone)
+  const context = buildContext(usable, target, time)
+  const messagesText = formatForPrompt(usable, time)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)
 
@@ -269,8 +275,9 @@ export async function answerQuery(
   const log = logger(ctx)
   // 问答是「群分析」命令的一部分，沿用同一份屏蔽名单
   const usable = excludeUsers(messages, config.analysisUserFilter)
-  const context = buildContext(usable, target, query)
+  const time = resolveTimeFormatter(ctx, config.timezone)
+  const context = buildContext(usable, target, time, query)
   log.info(`群聊问答: ${context.groupName} 基于 ${usable.length} 条消息，问题「${query}」` +
     (messages.length !== usable.length ? `（屏蔽了 ${messages.length - usable.length} 条）` : ''))
-  return ctx.qqGroupLlm.answerQuery(formatForPrompt(usable), context)
+  return ctx.qqGroupLlm.answerQuery(formatForPrompt(usable, time), context)
 }

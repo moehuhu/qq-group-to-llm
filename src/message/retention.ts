@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import type { Config } from '../config'
 import { TABLE } from '../database'
 import { logger } from '../logger'
+import { createTimeFormatter } from '../time'
 
 const CLEAN_INTERVAL = 6 * 60 * 60 * 1000 // 每 6 小时执行一次
 
@@ -23,7 +24,7 @@ export function applyRetentionCleanup(ctx: Context, config: Config) {
     try {
       const result = await ctx.database.remove(TABLE, { timestamp: { $lt: cutoff } })
       const removed = (result as { removed?: number })?.removed
-      log.info(`清理完成，删除 ${removed ?? '未知数量'} 条 ${cutoff.toLocaleString('zh-CN', { hour12: false })} 之前的消息，耗时 ${Date.now() - startedAt}ms`)
+      log.info(`清理完成，删除 ${removed ?? '未知数量'} 条 ${createTimeFormatter(config.timezone).dateTime(cutoff)} 之前的消息，耗时 ${Date.now() - startedAt}ms`)
     } catch (error) {
       log.warn('清理过期消息失败:', error)
     }

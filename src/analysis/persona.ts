@@ -3,6 +3,7 @@ import { dump, load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
+import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import type { UserPersonaProfile } from '../types'
 
 export interface PersonaTarget {
@@ -51,12 +52,11 @@ async function collectMessages(
 }
 
 /** 带 <msgid:…> 锚点渲染，供模型在 evidence 中引用 */
-function formatForPrompt(messages: MessageRecord[]): string {
+function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
   return messages.map((message) => {
-    const time = message.timestamp.toLocaleString('zh-CN', { hour12: false })
     const scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
     const anchor = message.messageId || message.id
-    return `[${time}] ${scope} <msgid:${anchor}> ${message.content}`
+    return `[${time.dateTime(message.timestamp)}] ${scope} <msgid:${anchor}> ${message.content}`
   }).join('\n')
 }
 
@@ -140,7 +140,7 @@ export async function resolvePersona(
   const generated = await ctx.qqGroupLlm.analyzeUserPersona({
     userId: target.userId,
     username,
-    messages: formatForPrompt(messages),
+    messages: formatForPrompt(messages, resolveTimeFormatter(ctx, config.timezone)),
   })
 
   if (!generated) {

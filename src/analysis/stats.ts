@@ -1,4 +1,5 @@
 import type { MessageRecord } from '../database'
+import type { TimeFormatter } from '../time'
 import type { UserStats } from '../types'
 
 /** 序列化内容中代表表情/图片、引用的占位符 */
@@ -17,8 +18,11 @@ interface Accumulator {
   quoteCount: number
 }
 
-/** 基于已序列化的消息文本统计发言数据 */
-export function calculateStats(messages: MessageRecord[]) {
+/**
+ * 基于已序列化的消息文本统计发言数据。
+ * 整点由传入的格式化器决定，好让分桶和报告里展示的时间落在同一个时区。
+ */
+export function calculateStats(messages: MessageRecord[], time: TimeFormatter) {
   const accumulators: Record<string, Accumulator> = {}
   const activeHours: Record<number, number> = {}
   let totalChars = 0
@@ -42,7 +46,7 @@ export function calculateStats(messages: MessageRecord[]) {
     if (message.username) acc.username = message.username
     if (message.avatar) acc.avatar = message.avatar
 
-    const hour = message.timestamp.getHours()
+    const hour = time.hour(message.timestamp)
     activeHours[hour] = (activeHours[hour] || 0) + 1
 
     acc.messageCount++
