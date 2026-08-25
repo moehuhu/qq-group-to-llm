@@ -23,6 +23,10 @@ export interface Config {
   temperature: number
   /** 同时在飞的模型请求数上限 */
   llmConcurrency: number
+  /** 以流式方式接收模型响应 */
+  llmStream: boolean
+  /** 请求失败后的重试次数 */
+  llmRetries: number
 
   /** 默认分析天数 */
   analysisDays: number
@@ -88,6 +92,10 @@ export const Config: Schema<Config> = Schema.intersect([
     temperature: Schema.number().default(1).min(0).max(2).step(0.1).description('采样温度'),
     llmConcurrency: Schema.number().default(2).min(1).max(5).step(1)
       .description('同时进行的模型调用数上限，超出的排队等待。调大可能触发厂商的并发限制导致调用失败'),
+    llmStream: Schema.boolean().default(true)
+      .description('以流式方式接收响应。关闭后服务端要等整段生成完才回响应头，提示词一长就容易超时失败（UND_ERR_HEADERS_TIMEOUT）'),
+    llmRetries: Schema.number().default(2).min(0).max(5).step(1)
+      .description('请求失败后的重试次数。仅对超时、连接中断、限流和 5xx 生效，鉴权或参数错误不重试'),
   }).description('LLM 接口'),
 
   Schema.object({

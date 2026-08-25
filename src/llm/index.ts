@@ -3,7 +3,7 @@ import { load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import type { AnalysisContext, GoldenQuote, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
-import { extractYaml, fill, findLeftovers, formatUsage } from './prompt'
+import { describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable } from './prompt'
 
 export class LLMService extends Service {
   static inject = ['http']
@@ -56,9 +56,30 @@ export class LLMService extends Service {
     }
   }
 
-  /** 调用 OpenAI 兼容接口，返回原始文本。经并发闸门限流 */
+  /** 调用 OpenAI 兼容接口，返回原始文本。经并发闸门限流，失败按需重试 */
   private chat(prompt: string, task: string): Promise<string> {
-    return this.enqueue(() => this.request(prompt, task), task)
+    return this.enqueue(() => this.requestWithRetry(prompt, task), task)
+  }
+
+  /**
+   * 带重试的请求。超时、连接抖动、429/5xx 都值得重发一次；
+   * 鉴权失败、请求格式错误重试多少遍都一样，直接抛出去。
+   * 重试在并发名额内进行，退避期间不释放名额——退避很短，
+   * 放掉名额再抢回来反而可能被别的请求插队、越等越久。
+   */
+  private async requestWithRetry(prompt: string, task: string): Promise<string> {
+    const total = Math.max(0, this.config.llmRetries)
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.request(prompt, task)
+      } catch (error) {
+        if (attempt >= total || !isRetryable(error)) throw error
+        const delay = 1000 * 2 ** attempt
+        this.log.warn(`[${task}] 第 ${attempt + 1}/${total + 1} 次尝试失败（${describeError(error)}），` +
+          `${delay}ms 后重试`)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
   }
 
   private async request(prompt: string, task: string): Promise<string> {
@@ -72,38 +93,130 @@ export class LLMService extends Service {
       this.log.warn(`[${task}] 提示词存在未替换的占位符: ${leftovers.join(' ')}`)
     }
 
-    this.log.info(`[${task}] 请求 ${this.config.openaiModel}，提示词 ${prompt.length} 字，temperature=${this.config.temperature}`)
+    const stream = this.config.llmStream
+    this.log.info(`[${task}] 请求 ${this.config.openaiModel}，提示词 ${prompt.length} 字，` +
+      `temperature=${this.config.temperature}，${stream ? '流式' : '非流式'}`)
     this.log.debug(`[${task}] 完整提示词:\n${prompt}`)
 
+    const payload: Record<string, unknown> = {
+      model: this.config.openaiModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: this.config.temperature,
+    }
+    if (stream) {
+      payload.stream = true
+      // 用量只在最后一个分片里给，不要就统计不到 token
+      payload.stream_options = { include_usage: true }
+    }
+    const headers = {
+      Authorization: `Bearer ${this.config.openaiApiKey}`,
+      'Content-Type': 'application/json',
+    }
+
     const startedAt = Date.now()
-    let response: any
+    let content: string
+    let usage: any
     try {
-      response = await this.ctx.http.post(url, {
-        model: this.config.openaiModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: this.config.temperature,
-      }, {
-        headers: {
-          Authorization: `Bearer ${this.config.openaiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      if (stream) {
+        const collected = await this.ctx.http.post(url, payload, {
+          headers,
+          // 拿原始 Response 自己读流；responseType 传函数时 cordis 会把它当解码器
+          responseType: (raw: Response) => this.readStream(raw, task, startedAt),
+        })
+        content = collected.content
+        usage = collected.usage
+      } else {
+        const response: any = await this.ctx.http.post(url, payload, { headers })
+        content = response?.choices?.[0]?.message?.content
+        usage = response?.usage
+        if (!content) {
+          this.log.error(`[${task}] 返回空响应（耗时 ${Date.now() - startedAt}ms），完整响应体:\n` +
+            JSON.stringify(response, null, 2))
+          throw new Error(`LLM 返回空响应（${task}）`)
+        }
+      }
     } catch (error) {
-      this.log.error(`[${task}] 请求失败（耗时 ${Date.now() - startedAt}ms，${url}）:`, error)
+      this.log.error(`[${task}] 请求失败（耗时 ${Date.now() - startedAt}ms，${url}）: ` +
+        `${describeError(error)}`, error)
       throw error
     }
 
     const elapsed = Date.now() - startedAt
-    const content = response?.choices?.[0]?.message?.content
     if (!content) {
-      this.log.error(`[${task}] 返回空响应（耗时 ${elapsed}ms），完整响应体:\n${JSON.stringify(response, null, 2)}`)
+      this.log.error(`[${task}] 流式响应没有任何内容分片（耗时 ${elapsed}ms）`)
       throw new Error(`LLM 返回空响应（${task}）`)
     }
 
-    this.log.info(`[${task}] 完成，耗时 ${elapsed}ms，响应 ${content.length} 字，${formatUsage(response.usage)}`)
+    this.log.info(`[${task}] 完成，耗时 ${elapsed}ms，响应 ${content.length} 字，${formatUsage(usage)}`)
     this.log.info(`[${task}] 完整响应:\n${content}`)
 
     return content
+  }
+
+  /**
+   * 读取 SSE 流并拼回完整文本。
+   *
+   * 流式是这里的关键：非流式时服务端要等整段生成完才发响应头，
+   * 长提示词很容易撞上 undici 那 5 分钟的 headersTimeout，
+   * 报一个 UND_ERR_HEADERS_TIMEOUT 就没了。流式下响应头秒回，
+   * 之后只要分片不断，就不会再触发超时。
+   */
+  private async readStream(
+    raw: Response,
+    task: string,
+    startedAt: number,
+  ): Promise<{ content: string; usage?: any }> {
+    if (!raw.body) throw new Error(`LLM 未返回响应体（${task}）`)
+
+    const reader = raw.body.getReader()
+    const decoder = new TextDecoder()
+    const parts: string[] = []
+    let usage: any
+    let buffer = ''
+    let firstChunkAt = 0
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        let index: number
+        while ((index = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, index).trim()
+          buffer = buffer.slice(index + 1)
+          if (!line.startsWith('data:')) continue
+
+          const payload = line.slice(5).trim()
+          if (payload === '[DONE]') return { content: parts.join(''), usage }
+
+          let chunk: any
+          try {
+            chunk = JSON.parse(payload)
+          } catch {
+            // 心跳或被截断的行，跳过即可
+            continue
+          }
+          // 厂商可能把错误塞在流里，这时不会有 [DONE]
+          if (chunk?.error) {
+            throw new Error(`LLM 返回错误: ${JSON.stringify(chunk.error)}`)
+          }
+          const delta = chunk?.choices?.[0]?.delta?.content
+          if (delta) {
+            if (!firstChunkAt) {
+              firstChunkAt = Date.now()
+              this.log.debug(`[${task}] 首个分片到达，耗时 ${firstChunkAt - startedAt}ms`)
+            }
+            parts.push(delta)
+          }
+          if (chunk?.usage) usage = chunk.usage
+        }
+      }
+    } finally {
+      reader.cancel().catch(() => {})
+    }
+
+    return { content: parts.join(''), usage }
   }
 
   /** 调用并解析 markdown 代码块中的 YAML */
