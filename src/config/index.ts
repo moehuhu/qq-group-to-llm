@@ -12,8 +12,6 @@ export interface Config {
   recordQuotes: boolean
   /** 消息保留天数（0 表示永久保留） */
   retentionDays: number
-  /** 查询时最多返回的消息条数 */
-  maxQuery: number
 
   /** OpenAI 兼容 API 地址 */
   openaiEndpoint: string
@@ -67,7 +65,6 @@ export const Config: Schema<Config> = Schema.intersect([
     recordImages: Schema.boolean().default(false).description('是否记录图片地址（关闭时图片内容记录为"[图片]"）'),
     recordQuotes: Schema.boolean().default(true).description('是否记录引用消息的引用内容'),
     retentionDays: Schema.number().default(0).min(0).description('消息保留天数，0 表示永久保留'),
-    maxQuery: Schema.number().default(20).min(1).max(100).description('msglog 命令最多返回的消息条数'),
   }).description('消息记录'),
 
   Schema.object({
