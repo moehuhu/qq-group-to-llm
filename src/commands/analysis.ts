@@ -85,7 +85,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
 
       try {
         if (question) {
-          const answer = await answerQuery(ctx, messages, target, question)
+          const answer = await answerQuery(ctx, config, messages, target, question)
           return toMarkdownMessage(answer)
         }
         const result = await analyzeGroup(ctx, config, messages, target)

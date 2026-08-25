@@ -59,6 +59,12 @@ export interface Config {
   personaOnlyCurrentGroup: boolean
   /** 查看他人画像所需的最低权限等级 */
   personaViewAuthority: number
+  /** 群分析（话题与活跃榜）忽略这些用户的发言 */
+  analysisUserFilter: string[]
+  /** 金句不收录这些用户 */
+  quoteUserFilter: string[]
+  /** 高光对话不收录这些用户 */
+  dialogueUserFilter: string[]
   /** 禁止分析画像的用户 ID */
   personaUserFilter: string[]
 
@@ -117,8 +123,18 @@ export const Config: Schema<Config> = Schema.intersect([
     personaCacheDays: Schema.number().default(3).min(0).description('画像结果的复用天数，0 表示每次都重新生成'),
     personaOnlyCurrentGroup: Schema.boolean().default(false).description('画像是否只统计当前频道（关闭则汇总该用户在所有已记录频道的发言）'),
     personaViewAuthority: Schema.number().default(3).min(0).max(4).step(1).description('查看他人画像所需的最低权限等级（0=所有人, 1=用户, 2=协管, 3=管理员, 4=主人）'),
-    personaUserFilter: Schema.array(Schema.string()).default([]).description('禁止分析画像的用户 ID'),
   }).description('用户画像'),
+
+  Schema.object({
+    analysisUserFilter: Schema.array(Schema.string()).default([])
+      .description('「群分析」忽略这些用户的发言，他们不进话题、不进活跃榜、也不计入统计'),
+    quoteUserFilter: Schema.array(Schema.string()).default([])
+      .description('「金句」不收录这些用户的发言'),
+    dialogueUserFilter: Schema.array(Schema.string()).default([])
+      .description('「高光对话」不收录这些用户，含有他们的对话整段丢弃'),
+    personaUserFilter: Schema.array(Schema.string()).default([])
+      .description('不为这些用户生成「用户画像」'),
+  }).description('用户屏蔽'),
 
   Schema.object({
     renderImage: Schema.boolean().default(true)

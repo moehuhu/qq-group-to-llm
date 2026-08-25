@@ -41,6 +41,29 @@ export async function fetchMessages(
   return records.reverse()
 }
 
+/** 剔除被屏蔽用户的发言。空名单时原样返回，不做无谓的拷贝 */
+export function excludeUsers(messages: MessageRecord[], blocked: string[]): MessageRecord[] {
+  if (!blocked?.length) return messages
+  return messages.filter((message) => !message.userId || !blocked.includes(message.userId))
+}
+
+/**
+ * 收集被屏蔽用户用过的昵称。
+ * 模型只认昵称，屏蔽名单填的是用户 ID——两者对不上，
+ * 所以还要用昵称在结果里再拦一道：别人转述、或模型张冠李戴时，
+ * 光靠「不投喂」是拦不住的。
+ */
+export function blockedNames(messages: MessageRecord[], blocked: string[]): Set<string> {
+  const names = new Set<string>()
+  if (!blocked?.length) return names
+  for (const message of messages) {
+    if (message.userId && blocked.includes(message.userId) && message.username) {
+      names.add(message.username)
+    }
+  }
+  return names
+}
+
 /** 把消息渲染成投喂给 LLM 的文本 */
 export function formatForPrompt(messages: MessageRecord[]): string {
   return messages.map((message) => {
@@ -117,11 +140,24 @@ export async function analyzeGroup(
 ): Promise<GroupAnalysisResult> {
   const log = logger(ctx)
   const startedAt = Date.now()
-  const context = buildContext(messages, target, query)
-  const messagesText = formatForPrompt(messages)
-  const { userStats, totalChars, mostActivePeriod } = calculateStats(messages)
 
-  log.info(`开始群分析: ${context.groupName}，${messages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
+  // 话题与金句的屏蔽名单是分开的：可以允许某人进话题和活跃榜，但不收他的金句
+  const analysisMessages = excludeUsers(messages, config.analysisUserFilter)
+  const quoteMessages = excludeUsers(messages, config.quoteUserFilter)
+  const blockedQuoteNames = blockedNames(messages, config.quoteUserFilter)
+  const hidden = messages.length - analysisMessages.length
+  if (hidden) {
+    log.info(`群分析屏蔽了 ${config.analysisUserFilter.length} 个用户的 ${hidden} 条发言`)
+  }
+  if (messages.length !== quoteMessages.length) {
+    log.info(`金句屏蔽了 ${messages.length - quoteMessages.length} 条发言`)
+  }
+
+  const context = buildContext(analysisMessages, target, query)
+  const messagesText = formatForPrompt(analysisMessages)
+  const { userStats, totalChars, mostActivePeriod } = calculateStats(analysisMessages)
+
+  log.info(`开始群分析: ${context.groupName}，${analysisMessages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
   /** 任一子任务失败不应拖垮整份报告 */
   const settle = async <T>(task: () => Promise<T[]>, name: string): Promise<T[]> => {
@@ -139,7 +175,8 @@ export async function analyzeGroup(
   const [topics, quotes] = await Promise.all([
     settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
     config.maxGoldenQuotes > 0
-      ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
+      ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(
+        formatForPrompt(quoteMessages), buildContext(quoteMessages, target, query)), '金句提取')
       : Promise.resolve([]),
   ])
 
@@ -148,6 +185,7 @@ export async function analyzeGroup(
   const usableQuotes = quotes
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
+    .filter((quote) => !quote.sender || !blockedQuoteNames.has(quote.sender))
     .slice(0, config.maxGoldenQuotes)
   const dropped = (topics.length - usableTopics.length) + (quotes.length - usableQuotes.length)
   if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段或超出条数上限）`)
@@ -158,7 +196,7 @@ export async function analyzeGroup(
   return {
     groupName: context.groupName,
     timeRange: context.timeRange,
-    totalMessages: messages.length,
+    totalMessages: analysisMessages.length,
     totalChars,
     totalParticipants: userStats.length,
     mostActivePeriod,
@@ -180,22 +218,31 @@ export async function analyzeDialogues(
 ): Promise<DialogueDigest> {
   const log = logger(ctx)
   const startedAt = Date.now()
-  const context = buildContext(messages, target)
-  const messagesText = formatForPrompt(messages)
 
-  log.info(`开始抽取高光对话: ${context.groupName}，${messages.length} 条消息，范围 ${context.timeRange}`)
+  const usable = excludeUsers(messages, config.dialogueUserFilter)
+  const blocked = blockedNames(messages, config.dialogueUserFilter)
+  if (messages.length !== usable.length) {
+    log.info(`高光对话屏蔽了 ${messages.length - usable.length} 条发言`)
+  }
+
+  const context = buildContext(usable, target)
+  const messagesText = formatForPrompt(usable)
+
+  log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)
 
   const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context)
 
-  // 昵称 → 头像。messages 按时间正序，重名时后者胜出，取到的是最近一次的头像
+  // 昵称 → 头像。usable 按时间正序，重名时后者胜出，取到的是最近一次的头像
   const avatars = new Map<string, string>()
-  for (const message of messages) {
+  for (const message of usable) {
     if (message.username && message.avatar) avatars.set(message.username, message.avatar)
   }
 
   const dialogues = raw
     .map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
     .filter((item): item is HighlightDialogue => !!item)
+    // 整段丢弃：抽掉其中一轮，剩下的对话就接不上了
+    .filter((item) => !item.lines.some((line) => blocked.has(line.sender)))
     .slice(0, config.maxHighlightDialogues)
 
   const dropped = raw.length - dialogues.length
@@ -206,7 +253,7 @@ export async function analyzeDialogues(
   return {
     groupName: context.groupName,
     timeRange: context.timeRange,
-    totalMessages: messages.length,
+    totalMessages: usable.length,
     dialogues,
   }
 }
@@ -214,12 +261,16 @@ export async function analyzeDialogues(
 /** 自然语言提问 */
 export async function answerQuery(
   ctx: Context,
+  config: Config,
   messages: MessageRecord[],
   target: AnalysisTarget,
   query: string,
 ): Promise<string> {
   const log = logger(ctx)
-  const context = buildContext(messages, target, query)
-  log.info(`群聊问答: ${context.groupName} 基于 ${messages.length} 条消息，问题「${query}」`)
-  return ctx.qqGroupLlm.answerQuery(formatForPrompt(messages), context)
+  // 问答是「群分析」命令的一部分，沿用同一份屏蔽名单
+  const usable = excludeUsers(messages, config.analysisUserFilter)
+  const context = buildContext(usable, target, query)
+  log.info(`群聊问答: ${context.groupName} 基于 ${usable.length} 条消息，问题「${query}」` +
+    (messages.length !== usable.length ? `（屏蔽了 ${messages.length - usable.length} 条）` : ''))
+  return ctx.qqGroupLlm.answerQuery(formatForPrompt(usable), context)
 }

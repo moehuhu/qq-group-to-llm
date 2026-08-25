@@ -104,6 +104,12 @@ export async function resolvePersona(
   const startedAt = Date.now()
   log.info(`开始处理用户画像 ${id}${force ? '（强制刷新）' : ''}`)
 
+  // 命令层已经拦过一次，这里再拦一道：resolvePersona 是导出的，别的入口调进来同样要生效
+  if (config.personaUserFilter.includes(target.userId)) {
+    log.info(`${id} 在 personaUserFilter 中，拒绝分析`)
+    return { persona: null, cached: false, messageCount: 0, reason: '该用户已被设置为不参与画像分析' }
+  }
+
   const record = await loadRecord(ctx, id)
   const previous = parsePersona(ctx, record)
   log.debug(`已存画像 ${previous ? `存在，上次分析于 ${record?.lastAnalysisAt}` : '不存在'}（仅用于缓存与兜底，不参与本次生成）`)
