@@ -3,6 +3,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
 import { renderPersona, resolveEvidence, resolvePersona } from '../analysis'
+import { renderHtmlToImage, renderPersonaHtml } from '../render'
 
 /**
  * 取画像主人的头像。
@@ -65,18 +66,30 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
         }
 
         const evidence = await resolveEvidence(ctx, outcome.persona)
-        const report = renderPersona(outcome.persona, evidence)
         const note = outcome.cached
           ? outcome.reason
-            ? `\n\n（${outcome.reason}，展示的是此前的画像）`
-            : '\n\n（复用了缓存的画像，可用 -f 强制重新生成）'
+            ? `（${outcome.reason}，展示的是此前的画像）`
+            : '（复用了缓存的画像，可用 -f 强制重新生成）'
           : ''
+
+        const image = await renderHtmlToImage(
+          ctx, config,
+          renderPersonaHtml(outcome.persona, evidence, outcome.avatar, config.imageWidth),
+          '用户画像',
+        )
+        // 图文混在一条消息里在 QQ 官方接口上容易出问题，缓存说明另发一条
+        if (image) {
+          if (!note) return image
+          await session.send(image)
+          return note
+        }
 
         // 头像以 markdown 图片语法嵌入内容开头，避免图片元素与 markdown 混发导致文本退化为纯文本
         const avatarMarkdown = outcome.avatar
           ? `![头像](${outcome.avatar})\n\n`
           : ''
-        return toMarkdownMessage(avatarMarkdown + report + note)
+        const report = renderPersona(outcome.persona, evidence)
+        return toMarkdownMessage(avatarMarkdown + report + (note ? `\n\n${note}` : ''))
       } catch (error) {
         log.error('用户画像生成失败:', error)
         return `用户画像生成失败：${error instanceof Error ? error.message : String(error)}`

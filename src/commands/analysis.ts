@@ -3,11 +3,13 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
 import { AnalysisTarget, analyzeGroup, answerQuery, fetchMessages, renderReport } from '../analysis'
+import { renderHtmlToImage, renderReportHtml } from '../render'
+import type { GroupAnalysisResult } from '../types'
 
-/** 分析结果缓存，键为 频道:天数 */
+/** 分析结果缓存，键为 频道:天数。存结构化结果而非渲染文本，图文两种出口都能复用 */
 interface CacheEntry {
   expireAt: number
-  report: string
+  result: GroupAnalysisResult
 }
 
 /** 解析分析目标；群名优先取事件里的 guild.name，取不到时向平台查询 */
@@ -33,6 +35,14 @@ async function resolveTarget(ctx: Context, session: Session, channelId: string):
 export function applyAnalysisCommand(ctx: Context, config: Config) {
   const log = logger(ctx)
   const cache = new Map<string, CacheEntry>()
+
+  /** 优先出图，puppeteer 不可用或渲染失败时回退为 markdown 文本 */
+  const send = async (result: GroupAnalysisResult) => {
+    const image = await renderHtmlToImage(
+      ctx, config, renderReportHtml(result, config.imageWidth), '群分析',
+    )
+    return image ?? toMarkdownMessage(renderReport(result))
+  }
 
   ctx.command('群分析 [query:text]', '用 LLM 分析本群近期的聊天记录')
     .alias('group-analysis')
@@ -61,7 +71,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
         const cached = cache.get(cacheKey)
         if (cached && cached.expireAt > Date.now()) {
           log.info(`命中群分析缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
-          return toMarkdownMessage(cached.report)
+          return send(cached.result)
         }
       }
 
@@ -78,12 +88,12 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
           const answer = await answerQuery(ctx, messages, target, question)
           return toMarkdownMessage(answer)
         }
-        const report = renderReport(await analyzeGroup(ctx, config, messages, target))
+        const result = await analyzeGroup(ctx, config, messages, target)
         if (config.cacheMinutes > 0) {
-          cache.set(cacheKey, { report, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
+          cache.set(cacheKey, { result, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
           log.debug(`群分析结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
         }
-        return toMarkdownMessage(report)
+        return send(result)
       } catch (error) {
         log.error('群分析执行失败:', error)
         return `群分析失败：${error instanceof Error ? error.message : String(error)}`

@@ -25,6 +25,9 @@
       "required": [
         "database",
         "http"
+      ],
+      "optional": [
+        "puppeteer"
       ]
     }
   },
@@ -32,6 +35,7 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
-    "@types/js-yaml": "^4.0.9"
+    "@types/js-yaml": "^4.0.9",
+    "koishi-plugin-puppeteer": "^3.9.0"
   }
 }

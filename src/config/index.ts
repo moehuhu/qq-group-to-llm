@@ -56,6 +56,13 @@ export interface Config {
   /** 禁止分析画像的用户 ID */
   personaUserFilter: string[]
 
+  /** 群分析与用户画像的结果以图片形式发送 */
+  renderImage: boolean
+  /** 图片宽度（CSS 像素） */
+  imageWidth: number
+  /** 截图缩放倍率，2 即二倍图 */
+  imageScale: number
+
   promptTopic: string
   promptGoldenQuotes: string
   promptHighlightDialogues: string
@@ -100,6 +107,15 @@ export const Config: Schema<Config> = Schema.intersect([
     personaViewAuthority: Schema.number().default(3).min(0).max(4).step(1).description('查看他人画像所需的最低权限等级（0=所有人, 1=用户, 2=协管, 3=管理员, 4=主人）'),
     personaUserFilter: Schema.array(Schema.string()).default([]).description('禁止分析画像的用户 ID'),
   }).description('用户画像'),
+
+  Schema.object({
+    renderImage: Schema.boolean().default(true)
+      .description('把「群分析」报告与「用户画像」渲染成图片发送（需要 puppeteer 服务；未启用或渲染失败时自动回退为文字）'),
+    imageWidth: Schema.number().default(720).min(480).max(1200)
+      .description('图片宽度（CSS 像素）'),
+    imageScale: Schema.number().default(2).min(1).max(3).step(1)
+      .description('截图缩放倍率，2 即二倍图，越大越清晰但文件也越大'),
+  }).description('图片渲染'),
 
   Schema.object({
     promptTopic: Schema.string().role('textarea')
