@@ -1,8 +1,9 @@
-import { Context, Session } from 'koishi'
+import { Context } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
-import { AnalysisTarget, analyzeDialogues, fetchMessages, renderDialogues } from '../analysis'
+import { analyzeDialogues, fetchMessages, renderDialogues } from '../analysis'
+import { resolveTarget } from './target'
 import { renderDialoguesHtml, renderHtmlToImage } from '../render'
 import type { DialogueDigest } from '../types'
 
@@ -41,11 +42,7 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
       if (!channelId) return '请在群聊中使用，或用 -g 指定频道 ID。'
 
       const days = Math.min(Math.max(options.days ?? config.analysisDays, 1), 7)
-      const target: AnalysisTarget = {
-        channelId,
-        guildId: session.guildId,
-        groupName: session.event?.guild?.name,
-      }
+      const target = await resolveTarget(ctx, session, channelId)
 
       log.info(`高光对话由 ${session.userId} 在 ${channelId} 发起，days=${days}` +
         `${count ? `，指定 ${count} 段` : ''}${options.force ? '，强制刷新' : ''}`)
@@ -78,7 +75,7 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
         )
 
         if (!digest.dialogues.length) {
-          return `最近 ${days} 天里没找到符合条件的高光对话（要求同时有学术要素和冷幽默，判定从严）。`
+          return `最近 ${days} 天里没找到符合条件的高光对话。`
         }
         if (!count && config.cacheMinutes > 0) {
           cache.set(cacheKey, { digest, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })

@@ -1,8 +1,9 @@
-import { Context, Session } from 'koishi'
+import { Context } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
-import { AnalysisTarget, analyzeGroup, answerQuery, fetchMessages, renderReport } from '../analysis'
+import { analyzeGroup, answerQuery, fetchMessages, renderReport } from '../analysis'
+import { resolveTarget } from './target'
 import { renderHtmlToImage, renderReportHtml } from '../render'
 import type { GroupAnalysisResult } from '../types'
 
@@ -10,25 +11,6 @@ import type { GroupAnalysisResult } from '../types'
 interface CacheEntry {
   expireAt: number
   result: GroupAnalysisResult
-}
-
-/** 解析分析目标；群名优先取事件里的 guild.name，取不到时向平台查询 */
-async function resolveTarget(ctx: Context, session: Session, channelId: string): Promise<AnalysisTarget> {
-  const log = logger(ctx)
-  let groupName = session.event?.guild?.name
-  if (!groupName && session.guildId) {
-    try {
-      groupName = (await session.bot.getGuild(session.guildId)).name
-      log.debug(`已通过平台接口取到群聊标题: ${groupName} (${session.guildId})`)
-    } catch (error) {
-      log.warn(`查询群 ${session.guildId} 名称失败，分析将回退使用群 ID:`, error)
-    }
-  }
-  return {
-    channelId,
-    guildId: session.guildId,
-    groupName,
-  }
 }
 
 /** 群分析：调用 LLM 生成报告，或就聊天记录自由提问 */

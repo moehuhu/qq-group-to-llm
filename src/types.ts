@@ -36,7 +36,7 @@ export interface HighlightDialogue {
   title?: string
   /** 按原始时间正序的对话轮次 */
   lines: HighlightLine[]
-  /** 冷幽默的笑点所在 */
+  /** 入选原因 */
   reason?: string
 }
 
