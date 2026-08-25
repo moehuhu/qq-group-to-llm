@@ -24,6 +24,8 @@ export interface GoldenQuote {
 export interface HighlightLine {
   sender: string
   content: string
+  /** 发言人头像，由记录里回查得到；渲染图片时用，取不到则退回首字色块 */
+  avatar?: string
 }
 
 /**
@@ -52,6 +54,8 @@ export type HighlightRecord = GoldenQuote | HighlightDialogue
 export interface UserStats {
   userId: string
   username: string
+  /** 该用户最近一次发言时的头像地址 */
+  avatar?: string
   messageCount: number
   charCount: number
   avgChars: number

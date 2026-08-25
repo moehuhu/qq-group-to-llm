@@ -13,6 +13,7 @@ export function extendModel(ctx: Context) {
     guildId: 'string',
     userId: 'string',
     username: 'string',
+    avatar: 'text',
     content: 'text',
     timestamp: 'timestamp',
     messageId: 'string',

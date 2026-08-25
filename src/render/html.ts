@@ -42,6 +42,19 @@ export function initial(name: string): string {
   return CJK.test(name) ? chars[chars.length - 1] : chars[0].toUpperCase()
 }
 
+/**
+ * 头像元素：底层永远是首字色块，图片盖在上面。
+ * 图挂了就 this.remove() 露出底下的字——比在 onerror 里拼一段构造 DOM 的
+ * JS 稳妥得多，那种写法里的引号会把 HTML 属性提前截断。
+ */
+function avatarTag(name: string, url: string | undefined, className: string): string {
+  const image = url
+    ? `<img class="avatar-img" src="${escapeHtml(url)}" alt="" onerror="this.remove()">`
+    : ''
+  return `<div class="${className}" style="background:${avatarColor(name)}">` +
+    `${escapeHtml(initial(name))}${image}</div>`
+}
+
 const section = (title: string, inner: string) =>
   `<div class="section"><div class="section-title">${title}</div>${inner}</div>`
 
@@ -76,7 +89,7 @@ function renderDialogue(dialogue: HighlightDialogue): string {
     const name = line.sender || '匿名'
     const right = (sides.get(line.sender) ?? 0) % 2 === 1
     return `<div class="turn${right ? ' right' : ''}">` +
-      `<div class="avatar" style="background:${avatarColor(name)}">${escapeHtml(initial(name))}</div>` +
+      avatarTag(name, line.avatar, 'avatar') +
       `<div class="bubble-wrap">` +
       `<div class="speaker">${escapeHtml(name)}</div>` +
       `<div class="bubble">${escapeHtml(line.content)}</div>` +
@@ -161,6 +174,7 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
       const ratio = Math.max(4, Math.round((user.messageCount / top) * 100))
       return `<div class="rank">` +
         `<div class="rank-no${medal}">${index + 1}</div>` +
+        avatarTag(user.username, user.avatar, 'rank-avatar') +
         `<div class="rank-main">` +
         `<div class="rank-head">` +
         `<span class="rank-name">${escapeHtml(user.username)}</span>` +
@@ -191,16 +205,9 @@ export function renderPersonaHtml(
   const name = persona.username || persona.userId
   const parts: string[] = []
 
-  // 头像取不到（或加载失败）时退回首字底色块，版面不会塌
-  const avatarHtml = avatar
-    ? `<img class="profile-avatar" src="${escapeHtml(avatar)}" alt="" ` +
-      `onerror="this.replaceWith(Object.assign(document.createElement('div'),` +
-      `{className:'profile-avatar',textContent:${JSON.stringify(initial(name))}}))">`
-    : `<div class="profile-avatar">${escapeHtml(initial(name))}</div>`
-
   parts.push(
     `<div class="banner"><div class="profile">` +
-    avatarHtml +
+    avatarTag(name, avatar, 'profile-avatar') +
     `<div class="profile-meta">` +
     `<div class="banner-title">${escapeHtml(name)}</div>` +
     `<div class="banner-sub">用户画像 · ${escapeHtml(persona.userId)}</div>` +

@@ -48,6 +48,8 @@ function buildRecord(session: Session, config: Config): MessageRecord {
     guildId: session.guildId,
     userId: session.userId,
     username: session.username || '',
+    // 头像地址随发言一起留存：事后渲染时平台接口未必还查得到这个人
+    avatar: session.author?.avatar || '',
     content: content || session.content || '',
     timestamp: new Date(session.timestamp),
     messageId: session.messageId || '',

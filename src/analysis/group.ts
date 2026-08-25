@@ -65,16 +65,24 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
  * 规整模型返回的高光对话：丢掉空轮次、按 maxHighlightLines 截断，
  * 并要求至少两人两轮——只有一个人自说自话的片段不算「对话」。
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
+ *
+ * avatars 是「昵称 → 头像地址」的对照表，用来给每轮发言补上头像；
+ * 模型只会还原昵称，头像得从原始记录里回查。
  */
 export function normalizeDialogue(
   item: Partial<HighlightDialogue> | undefined,
   maxLines: number,
+  avatars: Map<string, string> = new Map(),
 ): HighlightDialogue | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
-    .map((line) => ({
-      sender: String(line?.sender ?? '').trim(),
-      content: String(line?.content ?? '').trim(),
-    }))
+    .map((line) => {
+      const sender = String(line?.sender ?? '').trim()
+      return {
+        sender,
+        content: String(line?.content ?? '').trim(),
+        avatar: avatars.get(sender) || undefined,
+      }
+    })
     .filter((line) => line.content)
     .slice(0, maxLines)
 
@@ -144,8 +152,13 @@ export async function analyzeGroup(
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
     .slice(0, config.maxGoldenQuotes)
+  // 昵称 → 头像。messages 按时间正序，重名时后者胜出，取到的是最近一次的头像
+  const avatars = new Map<string, string>()
+  for (const message of messages) {
+    if (message.username && message.avatar) avatars.set(message.username, message.avatar)
+  }
   const usableDialogues = dialogues
-    .map((item) => normalizeDialogue(item, config.maxHighlightLines))
+    .map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
     .filter((item): item is HighlightDialogue => !!item)
     .slice(0, config.maxHighlightDialogues)
 

@@ -120,7 +120,7 @@ export async function resolvePersona(
     // 本次无法生成，有旧画像时返回旧的总比什么都没有好
     return {
       persona: previous,
-      avatar: target.avatar || record?.avatar,
+      avatar: target.avatar || messages.find((message) => message.avatar)?.avatar || record?.avatar,
       cached: !!previous,
       messageCount: messages.length,
       reason: `最近 ${config.personaLookbackDays} 天只有 ${messages.length} 条发言，` +
@@ -129,6 +129,8 @@ export async function resolvePersona(
   }
 
   const username = messages[messages.length - 1].username || target.username
+  // 记录里存了发言当时的头像：命令触发时没抓到（比如平台不支持 getUser）就用这个兜底
+  const recordedAvatar = [...messages].reverse().find((message) => message.avatar)?.avatar
   const generated = await ctx.qqGroupLlm.analyzeUserPersona({
     userId: target.userId,
     username,
@@ -139,7 +141,7 @@ export async function resolvePersona(
     log.warn(`${id} 的画像生成失败，${previous ? '保留已存画像' : '无已存画像可用'}`)
     return {
       persona: previous,
-      avatar: target.avatar || record?.avatar,
+      avatar: target.avatar || recordedAvatar || record?.avatar,
       cached: !!previous,
       messageCount: messages.length,
       reason: 'LLM 未返回可用的画像结果',
@@ -159,8 +161,8 @@ export async function resolvePersona(
   log.debug(`${id} 本次画像: 特质 ${toArray(profile.keyTraits).length} 项 / ` +
     `兴趣 ${toArray(profile.interests).length} 项 / 证据 ${evidence.length}/${claimed.length} 条`)
 
-  // 本次没抓到头像时沿用库里的旧值，不要把已有的抹掉
-  const avatar = target.avatar || record?.avatar || ''
+  // 本次没抓到头像时依次回退到记录里的、库里的旧值，不要把已有的抹掉
+  const avatar = target.avatar || recordedAvatar || record?.avatar || ''
   const now = new Date()
   await ctx.database.upsert(PERSONA_TABLE, [{
     id,

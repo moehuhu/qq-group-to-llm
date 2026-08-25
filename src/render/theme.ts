@@ -176,6 +176,7 @@ body {
 .turn { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
 .turn.right { flex-direction: row-reverse; }
 .avatar {
+  position: relative;
   flex: 0 0 auto;
   width: 30px; height: 30px;
   border-radius: 50%;
@@ -260,6 +261,19 @@ body {
 .rank-no.top1 { color: #fff; background: linear-gradient(135deg, #f6b73c, #ee8a2b); }
 .rank-no.top2 { color: #fff; background: linear-gradient(135deg, #c2ccdb, #9aa7bb); }
 .rank-no.top3 { color: #fff; background: linear-gradient(135deg, #e0a170, #c9824d); }
+.rank-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 26px;
+  text-align: center;
+  object-fit: cover;
+  overflow: hidden;
+}
 .rank-main { flex: 1 1 auto; min-width: 0; }
 .rank-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .rank-name {
@@ -277,10 +291,10 @@ body {
 /* 用户画像 */
 .profile { display: flex; align-items: center; gap: 16px; position: relative; }
 .profile-avatar {
+  position: relative;
   flex: 0 0 auto;
   width: 62px; height: 62px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, .22);
   border: 2px solid rgba(255, 255, 255, .55);
   object-fit: cover;
   color: #fff;
@@ -316,6 +330,15 @@ body {
   border-radius: 0 10px 10px 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 头像图层：盖在首字色块之上，加载失败时被移除，底下的字自然露出 */
+.avatar-img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .empty { font-size: 14px; color: var(--muted); padding: 2px 0 4px; }

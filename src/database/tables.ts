@@ -11,6 +11,8 @@ export interface MessageRecord {
   guildId?: string
   userId?: string
   username: string
+  /** 发言时的头像地址，用于渲染图片；平台没给就是空串 */
+  avatar: string
   content: string
   timestamp: Date
   messageId: string

@@ -9,6 +9,7 @@ const QUOTE_PATTERN = /\[引用\]/
 interface Accumulator {
   userId: string
   username: string
+  avatar: string
   messageCount: number
   charCount: number
   nightCount: number
@@ -29,6 +30,7 @@ export function calculateStats(messages: MessageRecord[]) {
     accumulators[userId] ??= {
       userId,
       username: userId,
+      avatar: '',
       messageCount: 0,
       charCount: 0,
       nightCount: 0,
@@ -36,7 +38,9 @@ export function calculateStats(messages: MessageRecord[]) {
       quoteCount: 0,
     }
     const acc = accumulators[userId]
+    // messages 按时间正序，后写的覆盖先写的，最终留下最近一次的昵称与头像
     if (message.username) acc.username = message.username
+    if (message.avatar) acc.avatar = message.avatar
 
     const hour = message.timestamp.getHours()
     activeHours[hour] = (activeHours[hour] || 0) + 1
@@ -53,6 +57,7 @@ export function calculateStats(messages: MessageRecord[]) {
   const userStats: UserStats[] = Object.values(accumulators).map((acc) => ({
     userId: acc.userId,
     username: acc.username,
+    avatar: acc.avatar || undefined,
     messageCount: acc.messageCount,
     charCount: acc.charCount,
     avgChars: ratio(acc.charCount, acc.messageCount),
