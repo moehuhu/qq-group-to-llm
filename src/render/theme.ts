@@ -118,6 +118,23 @@ body {
   column-count: 2;
   column-gap: 26px;
 }
+/*
+ * 板块内部的分栏。板块本身始终通栏，列数由各板块自己决定：
+ * 话题与活跃榜两列，金句多列（短，排得下），高光对话单列（气泡需要宽度）。
+ *
+ * 用 grid 而不是 column-count：多列流是按列灌的，4 张卡片分 3 列会被
+ * 平衡成 2+2+0，白白空出一列；grid 按行铺，永远不会留空列。
+ * 纵向间距仍由卡片自己的 margin 负责，这里只管列间距。
+ */
+.group {
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: 22px;
+  align-items: start;
+}
+.group.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.group.cols-3 { grid-template-columns: repeat(3, 1fr); }
+
 /* 卡片是最小不可分单位，标题不能和它后面的内容被拆到两列 */
 .topic, .dialogue, .quote, .rank, .evidence, .field, .summary { break-inside: avoid; }
 .section-title, .subsection-title { break-after: avoid; }

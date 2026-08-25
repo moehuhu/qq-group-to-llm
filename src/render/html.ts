@@ -67,8 +67,21 @@ const section = (title: string, inner: string, keep = false) =>
 const TWO_COLUMN_MIN_WIDTH = 820
 
 /**
- * 正文容器：够宽且不止一个分节时排成两列，否则单列。
- * 两列由多列流实现，内容按原顺序自上而下灌满左列再进右列。
+ * 板块内部的分栏容器。
+ * 列数取「板块上限」和「实际条目数」的较小值——两条内容排三列会空出一列，
+ * 一条内容排两列会空出一半。画布不够宽时一律退回单列，
+ * 每列不足 400px 时卡片里的文字会挤得没法读。
+ */
+function group(inner: string, count: number, maxColumns: 1 | 2 | 3, width: number): string {
+  const columns = width >= TWO_COLUMN_MIN_WIDTH
+    ? Math.max(1, Math.min(maxColumns, count))
+    : 1
+  return `<div class="group${columns > 1 ? ` cols-${columns}` : ''}">${inner}</div>`
+}
+
+/**
+ * 页面级两列（仅用户画像用）：分节整块地灌进两列。
+ * 群分析不走这条——它的列数是逐板块指定的。
  */
 function layout(width: number, sections: string[]): string {
   const present = sections.filter(Boolean)
@@ -147,7 +160,7 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
     `</div>`,
   )
 
-  const topics = result.topics.length
+  const topicCards = result.topics.length
     ? result.topics.map((topic) => {
       const contributors = toArray(topic.contributors)
       return `<div class="topic">` +
@@ -158,6 +171,10 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
           : '') +
         `</div>`
     }).join('')
+    : ''
+  // 话题与活跃榜是群分析的常规板块，一律两列
+  const topics = topicCards
+    ? group(topicCards, result.topics.length, 2, width)
     : `<div class="empty">暂无</div>`
 
   // 高光记录：对话与金句共用一个板块，各自带小标题
@@ -168,16 +185,18 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
     const blocks: string[] = []
     if (dialogues.length) {
       blocks.push(`<div class="subsection-title">🧊 高光对话</div>`)
-      blocks.push(dialogues.map(renderDialogue).join(''))
+      // 单列：气泡要靠宽度才排得开，挤进窄列就没有对话的样子了
+      blocks.push(group(dialogues.map(renderDialogue).join(''), dialogues.length, 1, width))
     }
     if (quotes.length) {
       blocks.push(`<div class="subsection-title">💬 金句</div>`)
-      blocks.push(quotes.map((quote) =>
+      // 多列：金句短，一行一句太浪费横向空间
+      blocks.push(group(quotes.map((quote) =>
         `<div class="quote">` +
         `<div class="quote-text">${escapeHtml(quote.content)}</div>` +
         `<div class="quote-meta">—— ${escapeHtml(quote.sender || '匿名')}</div>` +
         (quote.reason ? `<div class="quote-reason">${escapeHtml(quote.reason)}</div>` : '') +
-        `</div>`).join(''))
+        `</div>`).join(''), quotes.length, 3, width))
     }
     highlightsHtml = section('✨ 高光记录', blocks.join(''))
   }
@@ -200,14 +219,15 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
         `<div class="rank-bar"><div class="rank-fill" style="width:${ratio}%"></div></div>` +
         `</div></div>`
     }).join('')
-    ranksHtml = section('🔥 活跃榜', rows, true)
+    ranksHtml = section('🔥 活跃榜', group(rows, result.userStats.length, 2, width))
   }
 
-  parts.push(layout(width, [
+  // 分节通栏纵向堆叠，分栏发生在各板块内部
+  parts.push(`<div class="body">${[
     section('💬 热门话题', topics),
     highlightsHtml,
     ranksHtml,
-  ]))
+  ].filter(Boolean).join('')}</div>`)
   parts.push(
     `<div class="footer"><span>${escapeHtml(result.groupName)}</span>` +
     `<span>共 ${result.totalMessages} 条消息</span></div>`,
