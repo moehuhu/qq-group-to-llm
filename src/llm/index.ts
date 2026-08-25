@@ -10,13 +10,58 @@ export class LLMService extends Service {
 
   private readonly log: ReturnType<typeof logger>
 
+  /** 当前在飞的请求数 */
+  private active = 0
+  /** 等待名额的请求，先到先得 */
+  private waiting: Array<() => void> = []
+
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'qqGroupLlm', true)
     this.log = logger(ctx)
   }
 
-  /** 调用 OpenAI 兼容接口，返回原始文本 */
-  private async chat(prompt: string, task: string): Promise<string> {
+  private get limit(): number {
+    return Math.max(1, this.config.llmConcurrency)
+  }
+
+  /** 取一个并发名额，名额满了就排队等 */
+  private async acquire(name: string): Promise<void> {
+    if (this.active < this.limit) {
+      this.active++
+      return
+    }
+    this.log.info(`[${name}] 已有 ${this.active} 个请求在飞（上限 ${this.limit}），排队等待`)
+    await new Promise<void>((resolve) => this.waiting.push(resolve))
+    // 名额由 release 直接转交，这里不再自增，否则会超发
+  }
+
+  /** 交还名额：有人在等就直接把名额转给他，避免中间出现空档被别人抢走 */
+  private release(): void {
+    const next = this.waiting.shift()
+    if (next) next()
+    else this.active--
+  }
+
+  /**
+   * 并发闸门。接口扛不住太多并发请求，同时打过去会失败，
+   * 因此在飞数量始终不超过 llmConcurrency。
+   * release 放在 finally 里：请求失败也必须还名额，否则会把后面的全饿死。
+   */
+  private async enqueue<T>(task: () => Promise<T>, name: string): Promise<T> {
+    await this.acquire(name)
+    try {
+      return await task()
+    } finally {
+      this.release()
+    }
+  }
+
+  /** 调用 OpenAI 兼容接口，返回原始文本。经并发闸门限流 */
+  private chat(prompt: string, task: string): Promise<string> {
+    return this.enqueue(() => this.request(prompt, task), task)
+  }
+
+  private async request(prompt: string, task: string): Promise<string> {
     if (!this.config.openaiApiKey) {
       throw new Error('未配置 API Key，请在插件配置中填写 openaiApiKey。')
     }

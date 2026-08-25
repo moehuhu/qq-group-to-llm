@@ -55,8 +55,26 @@ function avatarTag(name: string, url: string | undefined, className: string): st
     `${escapeHtml(initial(name))}${image}</div>`
 }
 
-const section = (title: string, inner: string) =>
-  `<div class="section"><div class="section-title">${title}</div>${inner}</div>`
+/**
+ * 一个分节。keep=true 表示不允许跨列拆开——
+ * 排行榜拆了序号会断在两列，画像要点拆了会有孤立小节落在右列顶端、头上没有标题。
+ * 篇幅可能很大的分节（高光记录）必须留着可拆，否则两列没法平衡。
+ */
+const section = (title: string, inner: string, keep = false) =>
+  `<div class="section${keep ? ' keep' : ''}"><div class="section-title">${title}</div>${inner}</div>`
+
+/** 低于这个宽度就不分栏——每列不足 400px 时对话气泡会挤得没法读 */
+const TWO_COLUMN_MIN_WIDTH = 820
+
+/**
+ * 正文容器：够宽且不止一个分节时排成两列，否则单列。
+ * 两列由多列流实现，内容按原顺序自上而下灌满左列再进右列。
+ */
+function layout(width: number, sections: string[]): string {
+  const present = sections.filter(Boolean)
+  const twoColumn = width >= TWO_COLUMN_MIN_WIDTH && present.length > 1
+  return `<div class="body${twoColumn ? ' columns' : ''}">${present.join('')}</div>`
+}
 
 /** 拼装完整文档。宽度由外层容器控制，截图时按 #card 的实际高度裁切 */
 function document_(title: string, width: number, inner: string): string {
@@ -129,8 +147,6 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
     `</div>`,
   )
 
-  const inner: string[] = []
-
   const topics = result.topics.length
     ? result.topics.map((topic) => {
       const contributors = toArray(topic.contributors)
@@ -143,9 +159,9 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
         `</div>`
     }).join('')
     : `<div class="empty">暂无</div>`
-  inner.push(section('💬 热门话题', topics))
 
   // 高光记录：对话与金句共用一个板块，各自带小标题
+  let highlightsHtml = ''
   const dialogues = result.highlights.filter((item) => item.kind === 'dialogue')
   const quotes = result.highlights.filter((item) => item.kind === 'quote')
   if (dialogues.length || quotes.length) {
@@ -163,9 +179,10 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
         (quote.reason ? `<div class="quote-reason">${escapeHtml(quote.reason)}</div>` : '') +
         `</div>`).join(''))
     }
-    inner.push(section('✨ 高光记录', blocks.join('')))
+    highlightsHtml = section('✨ 高光记录', blocks.join(''))
   }
 
+  let ranksHtml = ''
   if (result.userStats.length) {
     // 条形长度相对榜首，最少留一点宽度免得看起来是空的
     const top = Math.max(...result.userStats.map((user) => user.messageCount), 1)
@@ -183,10 +200,14 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
         `<div class="rank-bar"><div class="rank-fill" style="width:${ratio}%"></div></div>` +
         `</div></div>`
     }).join('')
-    inner.push(section('🔥 活跃榜', rows))
+    ranksHtml = section('🔥 活跃榜', rows, true)
   }
 
-  parts.push(`<div class="body">${inner.join('')}</div>`)
+  parts.push(layout(width, [
+    section('💬 热门话题', topics),
+    highlightsHtml,
+    ranksHtml,
+  ]))
   parts.push(
     `<div class="footer"><span>${escapeHtml(result.groupName)}</span>` +
     `<span>共 ${result.totalMessages} 条消息</span></div>`,
@@ -214,10 +235,10 @@ export function renderPersonaHtml(
     `</div></div></div>`,
   )
 
-  const inner: string[] = []
-  inner.push(section('📝 整体印象',
-    `<div class="summary">${escapeHtml(persona.summary?.trim() || '（无总结）')}</div>`))
+  const summaryHtml = section('📝 整体印象',
+    `<div class="summary">${escapeHtml(persona.summary?.trim() || '（无总结）')}</div>`, true)
 
+  let pointsHtml = ''
   const traits = toArray(persona.keyTraits)
   const interests = toArray(persona.interests)
   const style = persona.communicationStyle?.trim()
@@ -239,15 +260,15 @@ export function renderPersonaHtml(
       fields.push(`<div class="field"><span class="field-label">🗣 表达风格</span>` +
         `<span class="field-value">${escapeHtml(style)}</span></div>`)
     }
-    inner.push(section('🔍 画像要点', fields.join('')))
+    pointsHtml = section('🔍 画像要点', fields.join(''), true)
   }
 
-  if (evidence.length) {
-    inner.push(section('📌 代表发言',
-      evidence.map((quote) => `<div class="evidence">${escapeHtml(quote)}</div>`).join('')))
-  }
+  const evidenceHtml = evidence.length
+    ? section('📌 代表发言',
+      evidence.map((quote) => `<div class="evidence">${escapeHtml(quote)}</div>`).join(''))
+    : ''
 
-  parts.push(`<div class="body">${inner.join('')}</div>`)
+  parts.push(layout(width, [summaryHtml, pointsHtml, evidenceHtml]))
   parts.push(`<div class="footer"><span>${escapeHtml(name)}</span><span>用户画像</span></div>`)
 
   return document_(`用户画像 · ${name}`, width, parts.join(''))

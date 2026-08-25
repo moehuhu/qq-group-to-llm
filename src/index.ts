@@ -24,6 +24,7 @@ export const inject = {
 export function apply(ctx: Context, config: Config) {
   const log = logger(ctx)
   log.info(`插件启动 | 模型 ${config.openaiModel} @ ${config.openaiEndpoint}` +
+    `，并发上限 ${config.llmConcurrency}` +
     `${config.openaiApiKey ? '' : '（未配置 API Key，分析类命令不可用）'}`)
   log.info(`结果出口 | ${config.renderImage
     ? `图片（${config.imageWidth}px @${config.imageScale}x）${ctx.puppeteer ? '' : '，但 puppeteer 未就绪，将回退为文字'}`

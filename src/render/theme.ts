@@ -109,6 +109,22 @@ body {
 
 .body { padding: 8px 34px 30px; }
 
+/*
+ * 两列排版走多列流：浏览器自己平衡两列高度。
+ * 按分节硬分左右会失衡——高光记录的篇幅经常顶得上其余两节之和，
+ * 那样左列会空掉一大半。
+ */
+.columns {
+  column-count: 2;
+  column-gap: 26px;
+}
+/* 卡片是最小不可分单位，标题不能和它后面的内容被拆到两列 */
+.topic, .dialogue, .quote, .rank, .evidence, .field, .summary { break-inside: avoid; }
+.section-title, .subsection-title { break-after: avoid; }
+/* 分节默认允许跨列续排，否则又退化成按节分栏；标了 keep 的整块搬走 */
+.section { break-inside: auto; }
+.section.keep { break-inside: avoid; }
+
 .section { padding-top: 24px; }
 .section-title {
   display: flex;

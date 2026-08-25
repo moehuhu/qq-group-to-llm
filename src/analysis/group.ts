@@ -125,24 +125,26 @@ export async function analyzeGroup(
 
   log.info(`开始群分析: ${context.groupName}，${messages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
-  // 任一子任务失败不应拖垮整份报告
-  const settle = async <T>(task: Promise<T[]>, name: string): Promise<T[]> => {
+  /** 任一子任务失败不应拖垮整份报告 */
+  const settle = async <T>(task: () => Promise<T[]>, name: string): Promise<T[]> => {
     try {
-      return await task
+      return await task()
     } catch (error) {
       log.warn(`${name}失败，该部分将留空:`, error)
       return []
     }
   }
 
-  // 金句与高光对话判定标准不同，分两次独立抽取，互不干扰，最后并入同一个板块
+  // 三个子任务一起发出，实际同时在飞几个由 LLMService 的并发闸门说了算。
+  // 这里不自己再控一层并发——两处各管一半的话，真实并发数就说不清了。
+  // 金句与高光对话判定标准不同，分两次独立抽取，互不干扰，最后并入同一个板块。
   const [topics, quotes, dialogues] = await Promise.all([
-    settle<SummaryTopic>(ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
+    settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
     config.maxGoldenQuotes > 0
-      ? settle(ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
+      ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
       : Promise.resolve([]),
     config.maxHighlightDialogues > 0
-      ? settle(ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context), '高光对话')
+      ? settle(() => ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context), '高光对话')
       : Promise.resolve([]),
   ])
 

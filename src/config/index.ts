@@ -21,6 +21,8 @@ export interface Config {
   openaiModel: string
   /** 采样温度 */
   temperature: number
+  /** 同时在飞的模型请求数上限 */
+  llmConcurrency: number
 
   /** 默认分析天数 */
   analysisDays: number
@@ -84,6 +86,8 @@ export const Config: Schema<Config> = Schema.intersect([
     openaiApiKey: Schema.string().role('secret').description('API Key（支持任意兼容 OpenAI 接口的厂商）'),
     openaiModel: Schema.string().default('gpt-4o-mini').description('使用的模型名称'),
     temperature: Schema.number().default(1).min(0).max(2).step(0.1).description('采样温度'),
+    llmConcurrency: Schema.number().default(2).min(1).max(5).step(1)
+      .description('同时进行的模型调用数上限，超出的排队等待。调大可能触发厂商的并发限制导致调用失败'),
   }).description('LLM 接口'),
 
   Schema.object({
@@ -111,8 +115,8 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     renderImage: Schema.boolean().default(true)
       .description('把「群分析」报告与「用户画像」渲染成图片发送（需要 puppeteer 服务；未启用或渲染失败时自动回退为文字）'),
-    imageWidth: Schema.number().default(720).min(480).max(1200)
-      .description('图片宽度（CSS 像素）'),
+    imageWidth: Schema.number().default(1000).min(480).max(1600)
+      .description('图片宽度（CSS 像素）。不低于 820 时正文排成两列，低于则单列'),
     imageScale: Schema.number().default(2).min(1).max(3).step(1)
       .description('截图缩放倍率，2 即二倍图，越大越清晰但文件也越大'),
   }).description('图片渲染'),
