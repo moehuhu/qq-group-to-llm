@@ -104,18 +104,16 @@ export class LLMService extends Service {
   }
 
   /**
-   * 生成用户画像。传入历史画像时，模型会在其基础上迭代而非推倒重来。
+   * 生成用户画像。每次都只依据传入的聊天记录重新生成，不参考已有结论。
    * 返回 null 表示模型没有给出可用结果。
    */
   async analyzeUserPersona(input: {
     userId: string
     username: string
     messages: string
-    previousAnalysis: string
   }): Promise<UserPersonaProfile | null> {
     const profiles = await this.chatYaml<UserPersonaProfile>(fill(this.config.promptUserPersona, {
       messages: input.messages,
-      previousAnalysis: input.previousAnalysis,
       userId: input.userId,
       username: input.username,
       lookbackDays: String(this.config.personaLookbackDays),

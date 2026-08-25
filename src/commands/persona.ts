@@ -27,7 +27,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
     .alias('user-persona')
     .usage([
       '不带参数时查看自己的画像，@某人 或传入用户 ID 可查看他人（需要权限）。',
-      '画像会在历史结论的基础上迭代，而不是每次推倒重来。',
+      '画像每次都依据最近的发言重新生成，不参考此前的结论。',
     ].join('\n'))
     .option('force', '-f  忽略缓存重新生成')
     .userFields(['authority'])

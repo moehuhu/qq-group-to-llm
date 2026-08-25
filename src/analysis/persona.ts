@@ -20,24 +20,6 @@ const buildId = (platform: string, userId: string) => `${platform}:${userId}`
 const toArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String).filter(Boolean) : []
 
-/** 新画像为空的字段回退到历史画像，避免一次失败的生成抹掉已有结论 */
-export function mergePersona(
-  previous: UserPersonaProfile | null,
-  current: UserPersonaProfile,
-): UserPersonaProfile {
-  if (!previous) return { ...current, lastMergedFromHistory: false }
-  return {
-    ...previous,
-    ...current,
-    summary: current.summary || previous.summary,
-    communicationStyle: current.communicationStyle || previous.communicationStyle,
-    keyTraits: toArray(current.keyTraits).length ? toArray(current.keyTraits) : toArray(previous.keyTraits),
-    interests: toArray(current.interests).length ? toArray(current.interests) : toArray(previous.interests),
-    evidence: toArray(current.evidence).length ? toArray(current.evidence) : toArray(previous.evidence),
-    lastMergedFromHistory: true,
-  }
-}
-
 /** 取该用户在回溯窗口内的发言，按时间正序 */
 async function collectMessages(
   ctx: Context,
@@ -78,16 +60,6 @@ function formatForPrompt(messages: MessageRecord[]): string {
   }).join('\n')
 }
 
-function formatPreviousForPrompt(persona: UserPersonaProfile | null): string {
-  if (!persona) return '（无历史画像，请从零开始）'
-  return [
-    `summary: ${persona.summary || '无'}`,
-    `keyTraits: ${toArray(persona.keyTraits).join('; ') || '无'}`,
-    `interests: ${toArray(persona.interests).join('; ') || '无'}`,
-    `communicationStyle: ${persona.communicationStyle || '无'}`,
-  ].join('\n')
-}
-
 async function loadRecord(ctx: Context, id: string): Promise<PersonaRecord | undefined> {
   const [record] = await ctx.database.select(PERSONA_TABLE).where({ id }).execute()
   return record
@@ -99,7 +71,7 @@ function parsePersona(ctx: Context, record?: PersonaRecord): UserPersonaProfile 
   try {
     return load(record.persona) as UserPersonaProfile
   } catch (error) {
-    log.warn(`解析历史画像失败 (${record.id})，将忽略:`, error)
+    log.warn(`解析已存画像失败 (${record.id})，将忽略:`, error)
     return null
   }
 }
@@ -112,7 +84,7 @@ export interface PersonaOutcome {
   persona: UserPersonaProfile | null
   /** 画像主人的头像地址，供渲染时展示 */
   avatar?: string
-  /** 直接复用了未过期的历史画像 */
+  /** 直接复用了未过期的已存画像 */
   cached: boolean
   /** 用于本次分析的消息条数 */
   messageCount: number
@@ -134,7 +106,7 @@ export async function resolvePersona(
 
   const record = await loadRecord(ctx, id)
   const previous = parsePersona(ctx, record)
-  log.debug(`历史画像 ${previous ? `存在，上次分析于 ${record?.lastAnalysisAt}` : '不存在'}`)
+  log.debug(`已存画像 ${previous ? `存在，上次分析于 ${record?.lastAnalysisAt}` : '不存在'}（仅用于缓存与兜底，不参与本次生成）`)
 
   if (!force && previous && isFresh(record, config.personaCacheDays)) {
     log.info(`命中画像缓存 ${id}（personaCacheDays=${config.personaCacheDays} 天内），跳过 LLM 调用`)
@@ -144,8 +116,8 @@ export async function resolvePersona(
   const messages = await collectMessages(ctx, config, target)
   if (messages.length < config.personaMinMessages) {
     log.info(`${id} 发言 ${messages.length} 条不足 personaMinMessages=${config.personaMinMessages}，` +
-      `${previous ? '回落到历史画像' : '无历史画像可用'}`)
-    // 记录不足但有历史画像时，返回旧的总比什么都没有好
+      `${previous ? '回落到已存画像' : '无已存画像可用'}`)
+    // 本次无法生成，有旧画像时返回旧的总比什么都没有好
     return {
       persona: previous,
       avatar: target.avatar || record?.avatar,
@@ -161,11 +133,10 @@ export async function resolvePersona(
     userId: target.userId,
     username,
     messages: formatForPrompt(messages),
-    previousAnalysis: formatPreviousForPrompt(previous),
   })
 
   if (!generated) {
-    log.warn(`${id} 的画像生成失败，${previous ? '保留历史画像' : '无历史画像可用'}`)
+    log.warn(`${id} 的画像生成失败，${previous ? '保留已存画像' : '无已存画像可用'}`)
     return {
       persona: previous,
       avatar: target.avatar || record?.avatar,
@@ -184,9 +155,9 @@ export async function resolvePersona(
     log.warn(`${id} 的画像引用了 ${fabricated.length} 个不存在的 msgid，已丢弃: ${fabricated.join(', ')}`)
   }
 
-  const merged = mergePersona(previous, { ...generated, evidence })
-  log.debug(`${id} 合并后画像: 特质 ${toArray(merged.keyTraits).length} 项 / ` +
-    `兴趣 ${toArray(merged.interests).length} 项 / 证据 ${evidence.length}/${claimed.length} 条`)
+  const profile: UserPersonaProfile = { ...generated, evidence }
+  log.debug(`${id} 本次画像: 特质 ${toArray(profile.keyTraits).length} 项 / ` +
+    `兴趣 ${toArray(profile.interests).length} 项 / 证据 ${evidence.length}/${claimed.length} 条`)
 
   // 本次没抓到头像时沿用库里的旧值，不要把已有的抹掉
   const avatar = target.avatar || record?.avatar || ''
@@ -197,14 +168,14 @@ export async function resolvePersona(
     userId: target.userId,
     username,
     avatar,
-    persona: dump(merged, { indent: 2, lineWidth: -1, noRefs: true }),
+    persona: dump(profile, { indent: 2, lineWidth: -1, noRefs: true }),
     lastAnalysisAt: now,
     updatedAt: now,
   }])
 
-  log.info(`用户画像 ${id} 已更新（${merged.lastMergedFromHistory ? '基于历史迭代' : '首次生成'}），` +
+  log.info(`用户画像 ${id} 已更新（完全由本次发言生成，未参考已存结论），` +
     `基于 ${messages.length} 条发言，总耗时 ${Date.now() - startedAt}ms`)
-  return { persona: merged, avatar, cached: false, messageCount: messages.length }
+  return { persona: profile, avatar, cached: false, messageCount: messages.length }
 }
 
 /** 把 evidence 中的 messageId 回查成原文 */

@@ -71,9 +71,8 @@ export const USER_PERSONA =
 `你是一名社群观察员。请基于该用户的聊天记录，给出一份中性、克制的用户画像。
 
 步骤：
-1. 先读「历史画像」理解已有结论；为空则从零开始
-2. 再读「最新聊天记录」，这是该用户最近 {lookbackDays} 天的发言
-3. 在历史画像基础上迭代：观点冲突时以新记录为准，历史中仍成立的结论予以保留
+1. 通读「聊天记录」，这是该用户最近 {lookbackDays} 天的发言
+2. 仅依据这批记录归纳结论，不要假设该用户在此之外还有别的特征
 
 要求：
 - 只写记录能支撑的结论，不要推测用户的真实身份、职业、住址等隐私信息
@@ -81,10 +80,7 @@ export const USER_PERSONA =
 - 纯文本，不要 markdown 语法
 - evidence 只填记录中 <msgid:xxx> 里的 id 原文，挑 5-10 条最有代表性的，不要编造 id
 
-历史画像：
-{previousAnalysis}
-
-最新聊天记录：
+聊天记录：
 {messages}
 
 请严格按以下 YAML 格式返回，并放在 markdown 代码块中：
@@ -101,5 +97,4 @@ export const USER_PERSONA =
     表达风格与情绪倾向，100 字以内
   evidence:
     - "msgid"
-  lastMergedFromHistory: true
 \`\`\``

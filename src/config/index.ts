@@ -105,7 +105,7 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('自然语言提问提示词，返回纯文本。占位符：{messages} {query} {groupName} {timeRange} {currentTime}')
       .default(prompts.QUERY),
     promptUserPersona: Schema.string().role('textarea')
-      .description('用户画像提示词。占位符：{messages} {previousAnalysis} {username} {userId} {lookbackDays}')
+      .description('用户画像提示词。占位符：{messages} {username} {userId} {lookbackDays}')
       .default(prompts.USER_PERSONA),
   }).description('提示词'),
 ])

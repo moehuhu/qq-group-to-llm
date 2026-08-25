@@ -58,6 +58,4 @@ export interface UserPersonaProfile {
   communicationStyle: string
   /** 支撑结论的原话，存 messageId；渲染时回查原文 */
   evidence: string[]
-  /** 本次是否在历史画像基础上迭代 */
-  lastMergedFromHistory?: boolean
 }
