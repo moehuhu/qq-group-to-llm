@@ -12,9 +12,8 @@ export interface SummaryTopic {
   detail?: string
 }
 
-/** 一条「金句」：单句成立的精彩发言 */
+/** 一条「金句」：单句成立的精彩发言，随群分析报告一起产出 */
 export interface GoldenQuote {
-  kind: 'quote'
   content: string
   sender?: string
   reason?: string
@@ -29,11 +28,10 @@ export interface HighlightLine {
 }
 
 /**
- * 一段「高光对话」：带学术要素的冷幽默群聊片段。
+ * 一段「高光对话」：带学术要素的冷幽默群聊片段，由独立的「高光对话」命令产出。
  * 与金句不同，它保留多轮上下文——笑点往往在一来一回之间才成立。
  */
 export interface HighlightDialogue {
-  kind: 'dialogue'
   /** 一句话概括这段对话在聊什么 */
   title?: string
   /** 按原始时间正序的对话轮次 */
@@ -44,12 +42,14 @@ export interface HighlightDialogue {
   reason?: string
 }
 
-/**
- * 报告中「高光记录」板块的条目。金句与高光对话由两次独立的抽取产生，
- * 判定标准互不干扰，在报告里合并成同一个板块展示。
- * kind 由本插件在规整阶段打上，不要求模型返回。
- */
-export type HighlightRecord = GoldenQuote | HighlightDialogue
+/** 「高光对话」命令的产物：一批对话，加上取数范围供渲染标题用 */
+export interface DialogueDigest {
+  groupName: string
+  timeRange: string
+  /** 本次分析取用的消息条数 */
+  totalMessages: number
+  dialogues: HighlightDialogue[]
+}
 
 export interface UserStats {
   userId: string
@@ -77,7 +77,7 @@ export interface GroupAnalysisResult {
   mostActivePeriod?: string
   userStats: UserStats[]
   topics: SummaryTopic[]
-  highlights: HighlightRecord[]
+  quotes: GoldenQuote[]
 }
 
 export interface UserPersonaProfile {

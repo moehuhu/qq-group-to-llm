@@ -3,7 +3,7 @@
  * 与 analysis/report.ts 的 markdown 渲染并行存在：同一份数据两种出口，
  * 开关关闭或 puppeteer 不可用时仍旧走 markdown。
  */
-import type { GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
 import { STYLE } from './theme'
 
 const toArray = (value: unknown): string[] =>
@@ -128,10 +128,8 @@ function renderDialogue(dialogue: HighlightDialogue): string {
   }).join('')
 
   const notes = [
-    dialogue.academicPoint && `<div class="note"><span class="note-tag edu">学术要素</span>` +
-      `<span>${escapeHtml(dialogue.academicPoint)}</span></div>`,
     dialogue.reason && `<div class="note"><span class="note-tag cold">冷在哪</span>` +
-      `<span>${escapeHtml(dialogue.reason)}</span></div>`,
+    `<span>${escapeHtml(dialogue.reason)}</span></div>`,
   ].filter(Boolean).join('')
 
   return `<div class="dialogue">` +
@@ -177,29 +175,15 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
     ? group(topicCards, result.topics.length, 2, width)
     : `<div class="empty">暂无</div>`
 
-  // 高光记录：对话与金句共用一个板块，各自带小标题
-  let highlightsHtml = ''
-  const dialogues = result.highlights.filter((item) => item.kind === 'dialogue')
-  const quotes = result.highlights.filter((item) => item.kind === 'quote')
-  if (dialogues.length || quotes.length) {
-    const blocks: string[] = []
-    if (dialogues.length) {
-      blocks.push(`<div class="subsection-title">🧊 高光对话</div>`)
-      // 单列：气泡要靠宽度才排得开，挤进窄列就没有对话的样子了
-      blocks.push(group(dialogues.map(renderDialogue).join(''), dialogues.length, 1, width))
-    }
-    if (quotes.length) {
-      blocks.push(`<div class="subsection-title">💬 金句</div>`)
-      // 多列：金句短，一行一句太浪费横向空间
-      blocks.push(group(quotes.map((quote) =>
-        `<div class="quote">` +
-        `<div class="quote-text">${escapeHtml(quote.content)}</div>` +
-        `<div class="quote-meta">—— ${escapeHtml(quote.sender || '匿名')}</div>` +
-        (quote.reason ? `<div class="quote-reason">${escapeHtml(quote.reason)}</div>` : '') +
-        `</div>`).join(''), quotes.length, 3, width))
-    }
-    highlightsHtml = section('✨ 高光记录', blocks.join(''))
-  }
+  // 金句：多列，金句短，一行一句太浪费横向空间
+  const quotesHtml = result.quotes.length
+    ? section('✨ 金句', group(result.quotes.map((quote) =>
+      `<div class="quote">` +
+      `<div class="quote-text">${escapeHtml(quote.content)}</div>` +
+      `<div class="quote-meta">—— ${escapeHtml(quote.sender || '匿名')}</div>` +
+      (quote.reason ? `<div class="quote-reason">${escapeHtml(quote.reason)}</div>` : '') +
+      `</div>`).join(''), result.quotes.length, 3, width))
+    : ''
 
   let ranksHtml = ''
   if (result.userStats.length) {
@@ -225,7 +209,7 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
   // 分节通栏纵向堆叠，分栏发生在各板块内部
   parts.push(`<div class="body">${[
     section('💬 热门话题', topics),
-    highlightsHtml,
+    quotesHtml,
     ranksHtml,
   ].filter(Boolean).join('')}</div>`)
   parts.push(
@@ -234,6 +218,31 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
   )
 
   return document_('群聊分析报告', width, parts.join(''))
+}
+
+/** 高光对话 → HTML。单列通栏：聊天气泡要靠宽度才排得开 */
+export function renderDialoguesHtml(digest: DialogueDigest, width: number): string {
+  const parts: string[] = []
+
+  parts.push(
+    `<div class="banner">` +
+    `<div class="banner-title">🧊 高光对话</div>` +
+    `<div class="banner-sub">${escapeHtml(digest.groupName)}</div>` +
+    `<div class="banner-sub">${escapeHtml(digest.timeRange)}</div>` +
+    `</div>`,
+  )
+
+  const body = digest.dialogues.length
+    ? group(digest.dialogues.map(renderDialogue).join(''), digest.dialogues.length, 1, width)
+    : `<div class="empty">这段时间没有找到符合条件的对话。</div>`
+  parts.push(`<div class="body"><div class="section">${body}</div></div>`)
+
+  parts.push(
+    `<div class="footer"><span>${escapeHtml(digest.groupName)}</span>` +
+    `<span>${digest.dialogues.length} 段 · 取自 ${digest.totalMessages} 条消息</span></div>`,
+  )
+
+  return document_('高光对话', width, parts.join(''))
 }
 
 /** 用户画像 → HTML */

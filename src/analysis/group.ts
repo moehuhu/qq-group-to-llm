@@ -5,9 +5,9 @@ import { calculateStats } from './stats'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
+  DialogueDigest,
   GoldenQuote,
   HighlightDialogue,
-  HighlightRecord,
   GroupAnalysisResult,
   SummaryTopic,
 } from '../types'
@@ -49,12 +49,11 @@ export function formatForPrompt(messages: MessageRecord[]): string {
   }).join('\n')
 }
 
-/** 规整金句：缺原文的直接丢弃，并补上 kind 供报告分组 */
+/** 规整金句：缺原文的直接丢弃 */
 export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQuote | null {
   const content = String(item?.content ?? '').trim()
   if (!content) return null
   return {
-    kind: 'quote',
     content,
     sender: item?.sender?.trim() || undefined,
     reason: item?.reason?.trim() || undefined,
@@ -90,7 +89,6 @@ export function normalizeDialogue(
   if (new Set(lines.map((line) => line.sender)).size < 2) return null
 
   return {
-    kind: 'dialogue',
     title: item?.title?.trim() || undefined,
     lines,
     academicPoint: item?.academicPoint?.trim() || undefined,
@@ -135,16 +133,13 @@ export async function analyzeGroup(
     }
   }
 
-  // 三个子任务一起发出，实际同时在飞几个由 LLMService 的并发闸门说了算。
+  // 两个子任务一起发出，实际同时在飞几个由 LLMService 的并发闸门说了算。
   // 这里不自己再控一层并发——两处各管一半的话，真实并发数就说不清了。
-  // 金句与高光对话判定标准不同，分两次独立抽取，互不干扰，最后并入同一个板块。
-  const [topics, quotes, dialogues] = await Promise.all([
+  // 高光对话不在这里抽取，它由独立的「高光对话」命令负责。
+  const [topics, quotes] = await Promise.all([
     settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
     config.maxGoldenQuotes > 0
       ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
-      : Promise.resolve([]),
-    config.maxHighlightDialogues > 0
-      ? settle(() => ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context), '高光对话')
       : Promise.resolve([]),
   ])
 
@@ -154,25 +149,11 @@ export async function analyzeGroup(
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
     .slice(0, config.maxGoldenQuotes)
-  // 昵称 → 头像。messages 按时间正序，重名时后者胜出，取到的是最近一次的头像
-  const avatars = new Map<string, string>()
-  for (const message of messages) {
-    if (message.username && message.avatar) avatars.set(message.username, message.avatar)
-  }
-  const usableDialogues = dialogues
-    .map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
-    .filter((item): item is HighlightDialogue => !!item)
-    .slice(0, config.maxHighlightDialogues)
-
-  const dropped = (topics.length - usableTopics.length) +
-    (quotes.length - usableQuotes.length) + (dialogues.length - usableDialogues.length)
-  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段、超出条数上限，或不足两人两轮的高光对话）`)
-
-  // 对话在前、金句在后：前者信息量更大，读报告时先看到
-  const highlights: HighlightRecord[] = [...usableDialogues, ...usableQuotes]
+  const dropped = (topics.length - usableTopics.length) + (quotes.length - usableQuotes.length)
+  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段或超出条数上限）`)
 
   log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${usableTopics.length} 个话题 / ` +
-    `${usableDialogues.length} 段高光对话 / ${usableQuotes.length} 条金句`)
+    `${usableQuotes.length} 条金句`)
 
   return {
     groupName: context.groupName,
@@ -183,7 +164,50 @@ export async function analyzeGroup(
     mostActivePeriod,
     userStats: userStats.slice(0, config.maxUsersInReport),
     topics: usableTopics.slice(0, config.maxTopics),
-    highlights,
+    quotes: usableQuotes,
+  }
+}
+
+/**
+ * 抽取高光对话。与群分析共用取数与上下文，但独立成命令——
+ * 它只跑一次模型，篇幅也和报告差得远，混在报告里会把报告撑得很长。
+ */
+export async function analyzeDialogues(
+  ctx: Context,
+  config: Config,
+  messages: MessageRecord[],
+  target: AnalysisTarget,
+): Promise<DialogueDigest> {
+  const log = logger(ctx)
+  const startedAt = Date.now()
+  const context = buildContext(messages, target)
+  const messagesText = formatForPrompt(messages)
+
+  log.info(`开始抽取高光对话: ${context.groupName}，${messages.length} 条消息，范围 ${context.timeRange}`)
+
+  const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context)
+
+  // 昵称 → 头像。messages 按时间正序，重名时后者胜出，取到的是最近一次的头像
+  const avatars = new Map<string, string>()
+  for (const message of messages) {
+    if (message.username && message.avatar) avatars.set(message.username, message.avatar)
+  }
+
+  const dialogues = raw
+    .map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
+    .filter((item): item is HighlightDialogue => !!item)
+    .slice(0, config.maxHighlightDialogues)
+
+  const dropped = raw.length - dialogues.length
+  if (dropped) log.warn(`丢弃 ${dropped} 段不合格的对话（缺字段、超出条数上限，或不足两人两轮）`)
+
+  log.info(`高光对话抽取完成，耗时 ${Date.now() - startedAt}ms，产出 ${dialogues.length} 段`)
+
+  return {
+    groupName: context.groupName,
+    timeRange: context.timeRange,
+    totalMessages: messages.length,
+    dialogues,
   }
 }
 

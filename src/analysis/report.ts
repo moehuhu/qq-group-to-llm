@@ -5,7 +5,7 @@
  * - 列表前若是普通文本，必须用空行隔开，否则无法被识别
  * - 单条 markdown 消息建议不超过 2000 字符
  */
-import type { GroupAnalysisResult, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, UserPersonaProfile } from '../types'
 import { escapeMarkdown } from '../markdown'
 
 const toArray = (value: unknown): string[] =>
@@ -37,35 +37,12 @@ export function renderReport(result: GroupAnalysisResult): string {
     lines.push('')
   }
 
-  if (result.highlights.length) {
-    lines.push(`## ✨ 高光记录`)
-    // 两类条目形态差别很大，各自打一个小标题，免得多轮对话和单句混在一起看不出边界
-    const dialogues = result.highlights.filter((item) => item.kind === 'dialogue')
-    const quotes = result.highlights.filter((item) => item.kind === 'quote')
-
-    if (dialogues.length) {
-      lines.push(`**🧊 高光对话**`)
+  if (result.quotes.length) {
+    lines.push(`## ✨ 金句`)
+    for (const quote of result.quotes) {
+      lines.push(`> ${escapeMarkdown(quote.content)} —— ${escapeMarkdown(quote.sender || '匿名')}`)
+      if (quote.reason) lines.push(`> ${escapeMarkdown(quote.reason)}`)
       lines.push('')
-      for (const dialogue of dialogues) {
-        if (dialogue.title) lines.push(`**${escapeMarkdown(dialogue.title)}**`)
-        // 逐轮渲染，保留一来一回的节奏——冷幽默的笑点常常只在上下文里成立
-        for (const line of dialogue.lines) {
-          lines.push(`> **${escapeMarkdown(line.sender || '匿名')}：**${escapeMarkdown(line.content)}`)
-        }
-        if (dialogue.academicPoint) lines.push(`**🎓 学术要素：** ${escapeMarkdown(dialogue.academicPoint)}`)
-        if (dialogue.reason) lines.push(`**❄️ 冷在哪：** ${escapeMarkdown(dialogue.reason)}`)
-        lines.push('')
-      }
-    }
-
-    if (quotes.length) {
-      lines.push(`**💬 金句**`)
-      lines.push('')
-      for (const quote of quotes) {
-        lines.push(`> ${escapeMarkdown(quote.content)} —— ${escapeMarkdown(quote.sender || '匿名')}`)
-        if (quote.reason) lines.push(`> ${escapeMarkdown(quote.reason)}`)
-        lines.push('')
-      }
     }
   }
 
@@ -78,6 +55,30 @@ export function renderReport(result: GroupAnalysisResult): string {
   }
 
   // 去除结尾多余空行
+  while (lines.length && lines[lines.length - 1] === '') lines.pop()
+  return lines.join('\n')
+}
+
+/** 把高光对话渲染为 markdown 文本 */
+export function renderDialogues(digest: DialogueDigest): string {
+  const lines: string[] = []
+  lines.push(`# 🧊 高光对话`)
+  lines.push('')
+  lines.push(`**群聊标题：** ${escapeMarkdown(digest.groupName)}`)
+  lines.push(`**时间范围：** ${escapeMarkdown(digest.timeRange)}`)
+  lines.push('')
+
+  for (const dialogue of digest.dialogues) {
+    if (dialogue.title) lines.push(`**${escapeMarkdown(dialogue.title)}**`)
+    // 逐轮渲染，保留一来一回的节奏——冷幽默的笑点常常只在上下文里成立
+    for (const line of dialogue.lines) {
+      lines.push(`> **${escapeMarkdown(line.sender || '匿名')}：**${escapeMarkdown(line.content)}`)
+    }
+    if (dialogue.academicPoint) lines.push(`**🎓 学术要素：** ${escapeMarkdown(dialogue.academicPoint)}`)
+    if (dialogue.reason) lines.push(`**❄️ 冷在哪：** ${escapeMarkdown(dialogue.reason)}`)
+    lines.push('')
+  }
+
   while (lines.length && lines[lines.length - 1] === '') lines.pop()
   return lines.join('\n')
 }
