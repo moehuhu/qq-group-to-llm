@@ -3,6 +3,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
+import { stripPlatformMarkup } from '../text'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
@@ -38,7 +39,11 @@ export async function fetchMessages(
 
   log.info(`取到频道 ${target.channelId} 最近 ${days} 天的 ${records.length} 条消息` +
     (records.length >= config.maxMessages ? `（已达 maxMessages=${config.maxMessages} 上限，更早的消息被截断）` : ''))
-  return records.reverse()
+  // 老记录里可能还留着平台的残标记，读出来就地清掉，省得渲染和提示词各清一遍
+  return records.reverse().map((record) => ({
+    ...record,
+    content: stripPlatformMarkup(record.content),
+  }))
 }
 
 /** 剔除被屏蔽用户的发言。空名单时原样返回，不做无谓的拷贝 */

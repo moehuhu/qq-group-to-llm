@@ -4,6 +4,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
+import { stripPlatformMarkup } from '../text'
 import type { UserPersonaProfile } from '../types'
 
 export interface PersonaTarget {
@@ -48,7 +49,10 @@ async function collectMessages(
   const range = config.personaOnlyCurrentGroup && target.channelId ? `频道 ${target.channelId}` : '全部已记录频道'
   log.info(`取到 ${target.username}(${target.userId}) 最近 ${config.personaLookbackDays} 天在${range}的 ${records.length} 条发言` +
     (records.length >= config.personaMaxMessages ? `（已达 personaMaxMessages=${config.personaMaxMessages} 上限）` : ''))
-  return records.reverse()
+  return records.reverse().map((record) => ({
+    ...record,
+    content: stripPlatformMarkup(record.content),
+  }))
 }
 
 /** 带 <msgid:…> 锚点渲染，供模型在 evidence 中引用 */
@@ -206,7 +210,8 @@ export async function resolveEvidence(
     byId.set(record.messageId || record.id, record)
     byId.set(record.id, record)
   }
-  const quotes = ids.map((id) => byId.get(id)?.content).filter(Boolean) as string[]
+  const quotes = ids.map((id) => byId.get(id)?.content)
+    .filter(Boolean).map((content) => stripPlatformMarkup(content)) as string[]
   if (quotes.length < ids.length) {
     log.debug(`证据回查: ${ids.length} 个 msgid 命中 ${quotes.length} 条原文，其余已被清理或删除`)
   }

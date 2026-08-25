@@ -2,6 +2,7 @@ import { Context, Element, Session } from 'koishi'
 import type { Config } from '../config'
 import { MessageRecord, TABLE } from '../database'
 import { logger } from '../logger'
+import { stripPlatformMarkup } from '../text'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
@@ -39,7 +40,7 @@ function serializeNodes(nodes: Element[], config: Config, nested = false): strin
 function buildRecord(session: Session, config: Config): MessageRecord {
   const suffix = session.messageId ||
     `${session.selfId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const content = serializeNodes(session.elements ?? [], config).trim()
+  const content = stripPlatformMarkup(serializeNodes(session.elements ?? [], config))
   return {
     id: `${session.platform}_${suffix}`,
     platform: session.platform,
@@ -50,7 +51,7 @@ function buildRecord(session: Session, config: Config): MessageRecord {
     username: session.username || '',
     // 头像地址随发言一起留存：事后渲染时平台接口未必还查得到这个人
     avatar: session.author?.avatar || '',
-    content: content || session.content || '',
+    content: content || stripPlatformMarkup(session.content) || '',
     timestamp: new Date(session.timestamp),
     messageId: session.messageId || '',
   }
