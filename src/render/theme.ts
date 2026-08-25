@@ -374,6 +374,56 @@ body {
   object-fit: cover;
 }
 
+/* 24 小时活跃柱状图 */
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding-top: 4px;
+}
+.chart-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+.chart-value {
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 3px;
+}
+.chart-bar {
+  width: 100%;
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, #8b9cf9, #6478f7);
+}
+/* 峰值用暖色挑出来，一眼能找到最闹的那个钟头 */
+.chart-col.peak .chart-bar { background: linear-gradient(180deg, #f6b73c, #ee8a2b); }
+.chart-col.peak .chart-value { color: var(--warm); font-weight: 600; }
+/* 深夜时段压暗，作息一眼可辨 */
+.chart-col.night .chart-bar { opacity: .45; }
+.chart-hour {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chart-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .empty { font-size: 14px; color: var(--muted); padding: 2px 0 4px; }
 
 .footer {

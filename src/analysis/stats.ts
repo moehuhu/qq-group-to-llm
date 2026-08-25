@@ -68,8 +68,11 @@ export function calculateStats(messages: MessageRecord[]) {
 
   const busiest = Object.entries(activeHours).sort((a, b) => b[1] - a[1])[0]
   const mostActivePeriod = busiest
-    ? `${busiest[0].padStart(2, '0')}:00 - ${String(Number(busiest[0]) + 1).padStart(2, '0')}:00`
+    ? `${busiest[0].padStart(2, '0')}:00 - ${String((Number(busiest[0]) + 1) % 24).padStart(2, '0')}:00`
     : undefined
 
-  return { userStats, totalChars, mostActivePeriod }
+  // 定长 24 项，没人说话的整点也要占位，否则柱状图会缺格
+  const hourly = Array.from({ length: 24 }, (_, hour) => activeHours[hour] ?? 0)
+
+  return { userStats, totalChars, mostActivePeriod, hourly }
 }

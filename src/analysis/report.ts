@@ -11,6 +11,19 @@ import { escapeMarkdown } from '../markdown'
 const toArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String).filter(Boolean) : []
 
+/** 用八级方块字符把 24 小时发言量画成一行迷你柱状图 */
+const BLOCKS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+export function sparkline(hourly: number[]): string {
+  const peak = Math.max(0, ...hourly)
+  if (!peak) return ''
+  return hourly.map((count) => {
+    if (!count) return ' '
+    // 有发言就至少占一格，免得和「没有」混为一谈
+    const level = Math.max(1, Math.round((count / peak) * (BLOCKS.length - 1)))
+    return BLOCKS[level]
+  }).join('')
+}
+
 /** 把分析结果渲染为 markdown 报告 */
 export function renderReport(result: GroupAnalysisResult): string {
   const lines: string[] = []
@@ -51,6 +64,18 @@ export function renderReport(result: GroupAnalysisResult): string {
     result.userStats.forEach((user, index) => {
       lines.push(`${index + 1}. ${escapeMarkdown(user.username)} — ${user.messageCount} 条 / 平均 ${user.avgChars} 字`)
     })
+    lines.push('')
+  }
+
+  const hourly = result.hourly ?? []
+  const peak = Math.max(0, ...hourly)
+  if (peak) {
+    lines.push(`## 🕓 活跃时段`)
+    // 文本出口用一行迷你柱状图：24 行逐时列表在聊天窗口里太占地方
+    lines.push(`\`${sparkline(hourly)}\``)
+    lines.push(`0 点 ————————— 12 点 ————————— 23 点`)
+    const peakHour = hourly.indexOf(peak)
+    lines.push(`最闹的一小时 ${String(peakHour).padStart(2, '0')}:00，共 ${peak} 条`)
     lines.push('')
   }
 

@@ -154,7 +154,7 @@ export async function analyzeGroup(
 
   const context = buildContext(analysisMessages, target, query)
   const messagesText = formatForPrompt(analysisMessages)
-  const { userStats, totalChars, mostActivePeriod } = calculateStats(analysisMessages)
+  const { userStats, totalChars, mostActivePeriod, hourly } = calculateStats(analysisMessages)
 
   log.info(`开始群分析: ${context.groupName}，${analysisMessages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
@@ -199,6 +199,7 @@ export async function analyzeGroup(
     totalChars,
     totalParticipants: userStats.length,
     mostActivePeriod,
+    hourly,
     userStats: userStats.slice(0, config.maxUsersInReport),
     topics: usableTopics.slice(0, config.maxTopics),
     quotes: usableQuotes,

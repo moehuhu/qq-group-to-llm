@@ -128,13 +128,45 @@ function renderDialogue(dialogue: HighlightDialogue): string {
   }).join('')
 
   const notes = [
-    dialogue.reason && `<div class="note"><span class="note-tag cold">冷在哪</span>` +
+    dialogue.reason && `<div class="note"><span class="note-tag cold">入选原因</span>` +
     `<span>${escapeHtml(dialogue.reason)}</span></div>`,
   ].filter(Boolean).join('')
 
   return `<div class="dialogue">` +
     (dialogue.title ? `<div class="dialogue-title">${escapeHtml(dialogue.title)}</div>` : '') +
     turns + notes + `</div>`
+}
+
+/** 柱形区的像素高度。用绝对值而非百分比：列高会被上下的标签撑开，百分比算不准 */
+const CHART_HEIGHT = 110
+
+/** 24 小时发言量柱状图 */
+function renderHourly(hourly: number[], totalMessages: number): string {
+  const peak = Math.max(...hourly)
+  // 全零时不画图，一排贴地的柱子没有信息量
+  if (!peak) return `<div class="empty">暂无足够数据</div>`
+
+  const peakHour = hourly.indexOf(peak)
+  const bars = hourly.map((count, hour) => {
+    // 有发言的整点至少留 3px，否则「1 条」和「没有」看起来一样
+    const height = count ? Math.max(3, Math.round((count / peak) * CHART_HEIGHT)) : 0
+    const classes = ['chart-col']
+    if (hour === peakHour) classes.push('peak')
+    if (hour < 6) classes.push('night')
+    return `<div class="${classes.join(' ')}">` +
+      `<div class="chart-value">${count || ''}</div>` +
+      `<div class="chart-bar" style="height:${height}px"></div>` +
+      `<div class="chart-hour">${hour}</div>` +
+      `</div>`
+  }).join('')
+
+  const night = hourly.slice(0, 6).reduce((sum, count) => sum + count, 0)
+  const nightRatio = totalMessages ? Math.round((night / totalMessages) * 100) : 0
+  return `<div class="chart">${bars}</div>` +
+    `<div class="chart-foot">` +
+    `<span>最闹的一小时 ${String(peakHour).padStart(2, '0')}:00（${peak} 条）</span>` +
+    `<span>深夜 00–06 点占 ${nightRatio}%</span>` +
+    `</div>`
 }
 
 /** 群聊分析报告 → HTML */
@@ -211,6 +243,8 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
     section('💬 热门话题', topics),
     quotesHtml,
     ranksHtml,
+    // 活跃时段固定压在报告最底部
+    section('🕓 活跃时段', renderHourly(result.hourly ?? [], result.totalMessages)),
   ].filter(Boolean).join('')}</div>`)
   parts.push(
     `<div class="footer"><span>${escapeHtml(result.groupName)}</span>` +

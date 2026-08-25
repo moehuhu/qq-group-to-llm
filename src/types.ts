@@ -73,6 +73,8 @@ export interface GroupAnalysisResult {
   totalParticipants: number
   /** 发言最集中的整点时段，无数据时为 undefined */
   mostActivePeriod?: string
+  /** 24 个整点各自的发言量，下标即小时（0-23），恒为 24 项 */
+  hourly: number[]
   userStats: UserStats[]
   topics: SummaryTopic[]
   quotes: GoldenQuote[]
