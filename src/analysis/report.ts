@@ -38,16 +38,34 @@ export function renderReport(result: GroupAnalysisResult): string {
   }
 
   if (result.highlights.length) {
-    lines.push(`## 🧊 高光对话`)
-    for (const highlight of result.highlights) {
-      if (highlight.title) lines.push(`**${escapeMarkdown(highlight.title)}**`)
-      // 逐轮渲染，保留一来一回的节奏——冷幽默的笑点常常只在上下文里成立
-      for (const line of highlight.lines) {
-        lines.push(`> **${escapeMarkdown(line.sender || '匿名')}：**${escapeMarkdown(line.content)}`)
-      }
-      if (highlight.academicPoint) lines.push(`**🎓 学术要素：** ${escapeMarkdown(highlight.academicPoint)}`)
-      if (highlight.reason) lines.push(`**❄️ 冷在哪：** ${escapeMarkdown(highlight.reason)}`)
+    lines.push(`## ✨ 高光记录`)
+    // 两类条目形态差别很大，各自打一个小标题，免得多轮对话和单句混在一起看不出边界
+    const dialogues = result.highlights.filter((item) => item.kind === 'dialogue')
+    const quotes = result.highlights.filter((item) => item.kind === 'quote')
+
+    if (dialogues.length) {
+      lines.push(`**🧊 高光对话**`)
       lines.push('')
+      for (const dialogue of dialogues) {
+        if (dialogue.title) lines.push(`**${escapeMarkdown(dialogue.title)}**`)
+        // 逐轮渲染，保留一来一回的节奏——冷幽默的笑点常常只在上下文里成立
+        for (const line of dialogue.lines) {
+          lines.push(`> **${escapeMarkdown(line.sender || '匿名')}：**${escapeMarkdown(line.content)}`)
+        }
+        if (dialogue.academicPoint) lines.push(`**🎓 学术要素：** ${escapeMarkdown(dialogue.academicPoint)}`)
+        if (dialogue.reason) lines.push(`**❄️ 冷在哪：** ${escapeMarkdown(dialogue.reason)}`)
+        lines.push('')
+      }
+    }
+
+    if (quotes.length) {
+      lines.push(`**💬 金句**`)
+      lines.push('')
+      for (const quote of quotes) {
+        lines.push(`> ${escapeMarkdown(quote.content)} —— ${escapeMarkdown(quote.sender || '匿名')}`)
+        if (quote.reason) lines.push(`> ${escapeMarkdown(quote.reason)}`)
+        lines.push('')
+      }
     }
   }
 

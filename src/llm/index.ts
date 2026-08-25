@@ -2,7 +2,7 @@ import { Context, Service } from 'koishi'
 import { load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
-import type { AnalysisContext, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
+import type { AnalysisContext, GoldenQuote, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
 import { extractYaml, fill, findLeftovers, formatUsage } from './prompt'
 
 export class LLMService extends Service {
@@ -95,12 +95,24 @@ export class LLMService extends Service {
     }), '话题总结')
   }
 
-  /** 截取带学术要素的冷幽默对话片段，模型认为没有符合条件的片段时返回空数组 */
-  async analyzeHighlights(messages: string, context: AnalysisContext): Promise<HighlightDialogue[]> {
-    return this.chatYaml<HighlightDialogue>(fill(this.config.promptHighlights, {
+  /** 挑选单句成立的金句。kind 由调用方规整时补上，不要求模型返回 */
+  async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<Omit<GoldenQuote, 'kind'>[]> {
+    return this.chatYaml<Omit<GoldenQuote, 'kind'>>(fill(this.config.promptGoldenQuotes, {
       ...context,
       messages,
-      maxHighlights: String(this.config.maxHighlights),
+      maxGoldenQuotes: String(this.config.maxGoldenQuotes),
+    }), '金句提取')
+  }
+
+  /** 截取带学术要素的冷幽默对话片段，模型认为没有符合条件的片段时返回空数组 */
+  async analyzeHighlightDialogues(
+    messages: string,
+    context: AnalysisContext,
+  ): Promise<Omit<HighlightDialogue, 'kind'>[]> {
+    return this.chatYaml<Omit<HighlightDialogue, 'kind'>>(fill(this.config.promptHighlightDialogues, {
+      ...context,
+      messages,
+      maxHighlightDialogues: String(this.config.maxHighlightDialogues),
       maxHighlightLines: String(this.config.maxHighlightLines),
     }), '高光对话')
   }

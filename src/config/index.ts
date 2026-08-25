@@ -34,8 +34,10 @@ export interface Config {
   maxUsersInReport: number
   /** 最多生成的话题数 */
   maxTopics: number
+  /** 最多生成的金句数 */
+  maxGoldenQuotes: number
   /** 最多截取的高光对话段数 */
-  maxHighlights: number
+  maxHighlightDialogues: number
   /** 单段高光对话最多保留的轮次 */
   maxHighlightLines: number
 
@@ -55,7 +57,8 @@ export interface Config {
   personaUserFilter: string[]
 
   promptTopic: string
-  promptHighlights: string
+  promptGoldenQuotes: string
+  promptHighlightDialogues: string
   promptQuery: string
   promptUserPersona: string
 }
@@ -83,7 +86,8 @@ export const Config: Schema<Config> = Schema.intersect([
     cacheMinutes: Schema.number().default(5).min(0).description('分析结果缓存分钟数，0 表示不缓存'),
     maxUsersInReport: Schema.number().default(10).min(1).description('报告中展示的活跃用户数'),
     maxTopics: Schema.number().default(5).min(1).description('最多生成的话题数'),
-    maxHighlights: Schema.number().default(3).min(0).description('最多截取的「高光对话」段数，0 表示关闭该板块'),
+    maxGoldenQuotes: Schema.number().default(3).min(0).description('「高光记录」中最多收录的金句条数，0 表示不收金句'),
+    maxHighlightDialogues: Schema.number().default(3).min(0).description('「高光记录」中最多截取的高光对话段数，0 表示不收对话'),
     maxHighlightLines: Schema.number().default(6).min(2).max(20).description('单段高光对话最多保留的轮次，超出的部分会被截断'),
   }).description('分析设置'),
 
@@ -101,8 +105,11 @@ export const Config: Schema<Config> = Schema.intersect([
     promptTopic: Schema.string().role('textarea')
       .description('话题总结提示词。占位符：{messages} {maxTopics} {groupName} {timeRange} {query}')
       .default(prompts.TOPIC),
-    promptHighlights: Schema.string().role('textarea')
-      .description('高光对话提示词。占位符：{messages} {maxHighlights} {maxHighlightLines} {groupName} {timeRange}')
+    promptGoldenQuotes: Schema.string().role('textarea')
+      .description('金句提取提示词。占位符：{messages} {maxGoldenQuotes} {groupName} {timeRange}')
+      .default(prompts.GOLDEN_QUOTES),
+    promptHighlightDialogues: Schema.string().role('textarea')
+      .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}')
       .default(prompts.HIGHLIGHT_DIALOGUES),
     promptQuery: Schema.string().role('textarea')
       .description('自然语言提问提示词，返回纯文本。占位符：{messages} {query} {groupName} {timeRange} {currentTime}')

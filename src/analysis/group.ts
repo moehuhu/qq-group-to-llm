@@ -5,7 +5,9 @@ import { calculateStats } from './stats'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
+  GoldenQuote,
   HighlightDialogue,
+  HighlightRecord,
   GroupAnalysisResult,
   SummaryTopic,
 } from '../types'
@@ -47,13 +49,25 @@ export function formatForPrompt(messages: MessageRecord[]): string {
   }).join('\n')
 }
 
+/** 规整金句：缺原文的直接丢弃，并补上 kind 供报告分组 */
+export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQuote | null {
+  const content = String(item?.content ?? '').trim()
+  if (!content) return null
+  return {
+    kind: 'quote',
+    content,
+    sender: item?.sender?.trim() || undefined,
+    reason: item?.reason?.trim() || undefined,
+  }
+}
+
 /**
  * 规整模型返回的高光对话：丢掉空轮次、按 maxHighlightLines 截断，
  * 并要求至少两人两轮——只有一个人自说自话的片段不算「对话」。
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  */
-export function normalizeHighlight(
-  item: HighlightDialogue | undefined,
+export function normalizeDialogue(
+  item: Partial<HighlightDialogue> | undefined,
   maxLines: number,
 ): HighlightDialogue | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
@@ -68,6 +82,7 @@ export function normalizeHighlight(
   if (new Set(lines.map((line) => line.sender)).size < 2) return null
 
   return {
+    kind: 'dialogue',
     title: item?.title?.trim() || undefined,
     lines,
     academicPoint: item?.academicPoint?.trim() || undefined,
@@ -112,23 +127,37 @@ export async function analyzeGroup(
     }
   }
 
-  const [topics, highlights] = await Promise.all([
+  // 金句与高光对话判定标准不同，分两次独立抽取，互不干扰，最后并入同一个板块
+  const [topics, quotes, dialogues] = await Promise.all([
     settle<SummaryTopic>(ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
-    config.maxHighlights > 0
-      ? settle<HighlightDialogue>(ctx.qqGroupLlm.analyzeHighlights(messagesText, context), '高光对话')
+    config.maxGoldenQuotes > 0
+      ? settle(ctx.qqGroupLlm.analyzeGoldenQuotes(messagesText, context), '金句提取')
+      : Promise.resolve([]),
+    config.maxHighlightDialogues > 0
+      ? settle(ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context), '高光对话')
       : Promise.resolve([]),
   ])
 
   // 模型偶尔会漏字段，缺主键的条目直接丢弃，避免污染报告
   const usableTopics = topics.filter((topic) => topic?.topic)
-  const usableHighlights = highlights
-    .map((item) => normalizeHighlight(item, config.maxHighlightLines))
+  const usableQuotes = quotes
+    .map((item) => normalizeQuote(item))
+    .filter((item): item is GoldenQuote => !!item)
+    .slice(0, config.maxGoldenQuotes)
+  const usableDialogues = dialogues
+    .map((item) => normalizeDialogue(item, config.maxHighlightLines))
     .filter((item): item is HighlightDialogue => !!item)
-  const dropped = (topics.length - usableTopics.length) + (highlights.length - usableHighlights.length)
-  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段，或不足两人两轮的高光对话）`)
+    .slice(0, config.maxHighlightDialogues)
+
+  const dropped = (topics.length - usableTopics.length) +
+    (quotes.length - usableQuotes.length) + (dialogues.length - usableDialogues.length)
+  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段、超出条数上限，或不足两人两轮的高光对话）`)
+
+  // 对话在前、金句在后：前者信息量更大，读报告时先看到
+  const highlights: HighlightRecord[] = [...usableDialogues, ...usableQuotes]
 
   log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${usableTopics.length} 个话题 / ` +
-    `${usableHighlights.length} 段高光对话`)
+    `${usableDialogues.length} 段高光对话 / ${usableQuotes.length} 条金句`)
 
   return {
     groupName: context.groupName,
@@ -139,7 +168,7 @@ export async function analyzeGroup(
     mostActivePeriod,
     userStats: userStats.slice(0, config.maxUsersInReport),
     topics: usableTopics.slice(0, config.maxTopics),
-    highlights: usableHighlights.slice(0, config.maxHighlights),
+    highlights,
   }
 }
 

@@ -37,7 +37,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
   ctx.command('群分析 [query:text]', '用 LLM 分析本群近期的聊天记录')
     .alias('group-analysis')
     .usage([
-      '不带参数时生成一份分析报告（话题、高光对话、活跃榜）。',
+      '不带参数时生成一份分析报告（话题、高光记录、活跃榜）。',
       '带参数时就聊天记录自由提问，例如：群分析 今天有人聊到部署问题吗',
     ].join('\n'))
     .option('days', '-d <days:number>  分析最近几天的记录')
