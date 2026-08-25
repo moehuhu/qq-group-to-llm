@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-qq-group-to-llm",
-  "description": "记录 QQ 群消息并提供给 LLM 使用",
+  "description": "记录 QQ 群消息并提供给 LLM 使用，适配qq官方适配器",
   "version": "0.0.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

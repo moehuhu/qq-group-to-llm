@@ -365,6 +365,41 @@ body {
   word-break: break-word;
 }
 
+/* 消息里的图片 */
+/* 图片自成一行；line-height:0 去掉 inline-block 底部那道基线缝隙 */
+.msg-media {
+  display: block;
+  margin: 5px 0;
+  line-height: 0;
+}
+.msg-media:first-child { margin-top: 0; }
+.msg-media:last-child { margin-bottom: 0; }
+.msg-img-wrap {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 100%;
+  margin-right: 5px;
+  line-height: 1.6;
+}
+.msg-img-wrap:last-child { margin-right: 0; }
+.msg-img {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+/* 图片加载成功就把占位标签藏起来；img 被 onerror 移除后标签自动回来 */
+.msg-img-wrap:has(img) .msg-img-chip { display: none; }
+.msg-img-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: #eef1f7;
+  border-radius: 6px;
+}
+
 /* 头像图层：盖在首字色块之上，加载失败时被移除，底下的字自然露出 */
 .avatar-img {
   position: absolute;

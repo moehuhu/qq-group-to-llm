@@ -19,6 +19,64 @@ export function escapeHtml(value: string | undefined | null): string {
     .replaceAll("'", '&#39;')
 }
 
+/**
+ * 记录里的图片占位符。recorder 把图片元素序列化成 `[图片](地址)`，
+ * recordImages 关闭时只留 `[图片]`。
+ */
+const IMAGE_PATTERN = /\[图片\](?:\((https?:\/\/[^\s)]+)\))?/g
+
+/** 只放行 http(s)，别的协议一律当没有地址处理 */
+function safeImageUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined
+  return /^https?:\/\//i.test(url) ? url : undefined
+}
+
+/**
+ * 一张消息图片。图片盖在「🖼 图片」小标签上，
+ * 加载失败时 img 自我移除，:has() 失配，标签自动露出来——
+ * 图链失效（QQ 的图片地址会过期）时不至于只剩一块空白。
+ */
+function imageTag(url: string | undefined): string {
+  const safe = safeImageUrl(url)
+  return `<span class="msg-img-wrap"><span class="msg-img-chip">🖼 图片</span>` +
+    (safe ? `<img class="msg-img" src="${escapeHtml(safe)}" alt="" onerror="this.remove()">` : '') +
+    `</span>`
+}
+
+/**
+ * 渲染一条消息正文：文字转义，图片占位符换成真正的图片。
+ * 不做这一步的话，群里发的图在报告里就是一行扎眼的 `[图片](https://...)` 原文。
+ */
+export function renderMessageContent(text: string): string {
+  const source = String(text ?? '')
+  const out: string[] = []
+  let images: string[] = []
+
+  // 连续的图片并成一个块级容器：图片留在文字行里会把行高撑得老高，
+  // 前后的文字被挤成上下两截，读起来很难受
+  const flushImages = () => {
+    if (!images.length) return
+    out.push(`<span class="msg-media">${images.join('')}</span>`)
+    images = []
+  }
+
+  let last = 0
+  for (const match of source.matchAll(IMAGE_PATTERN)) {
+    const before = source.slice(last, match.index)
+    if (before.trim()) {
+      flushImages()
+      out.push(escapeHtml(before.trim()))
+    }
+    images.push(imageTag(match[1]))
+    last = match.index + match[0].length
+  }
+  flushImages()
+
+  const tail = source.slice(last)
+  if (tail.trim()) out.push(escapeHtml(tail.trim()))
+  return out.join('')
+}
+
 /** 由昵称派生一个稳定的头像底色，同一个人每次渲染颜色一致 */
 const AVATAR_COLORS = [
   '#5b6ef5', '#8b5cf6', '#e0568c', '#f0913a',
@@ -123,7 +181,7 @@ function renderDialogue(dialogue: HighlightDialogue): string {
       avatarTag(name, line.avatar, 'avatar') +
       `<div class="bubble-wrap">` +
       `<div class="speaker">${escapeHtml(name)}</div>` +
-      `<div class="bubble">${escapeHtml(line.content)}</div>` +
+      `<div class="bubble">${renderMessageContent(line.content)}</div>` +
       `</div></div>`
   }).join('')
 
@@ -211,7 +269,7 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
   const quotesHtml = result.quotes.length
     ? section('✨ 金句', group(result.quotes.map((quote) =>
       `<div class="quote">` +
-      `<div class="quote-text">${escapeHtml(quote.content)}</div>` +
+      `<div class="quote-text">${renderMessageContent(quote.content)}</div>` +
       `<div class="quote-meta">—— ${escapeHtml(quote.sender || '匿名')}</div>` +
       (quote.reason ? `<div class="quote-reason">${escapeHtml(quote.reason)}</div>` : '') +
       `</div>`).join(''), result.quotes.length, 3, width))
@@ -328,7 +386,7 @@ export function renderPersonaHtml(
 
   const evidenceHtml = evidence.length
     ? section('📌 代表发言',
-      evidence.map((quote) => `<div class="evidence">${escapeHtml(quote)}</div>`).join(''))
+      evidence.map((quote) => `<div class="evidence">${renderMessageContent(quote)}</div>`).join(''))
     : ''
 
   parts.push(layout(width, [summaryHtml, pointsHtml, evidenceHtml]))
