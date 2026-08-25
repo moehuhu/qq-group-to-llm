@@ -6,7 +6,7 @@
  */
 
 export const TOPIC =
-`你是群聊记录总结助手。请阅读下面的群聊记录，提取最多 {maxTopics} 个主要话题。
+  `你是群聊记录总结助手。请阅读下面的群聊记录，提取最多 {maxTopics} 个主要话题。
 
 对每个话题请给出：
 1. 话题名称：简明扼要，直接点出主题
@@ -31,7 +31,7 @@ export const TOPIC =
 \`\`\``
 
 export const GOLDEN_QUOTES =
-`请从下面的群聊记录中挑出最多 {maxGoldenQuotes} 条最有意思的「金句」。
+  `请从下面的群聊记录中挑出最多 {maxGoldenQuotes} 条最有意思的「金句」。
 
 挑选标准：观点新颖、表达生动、或有反差感与记忆点的原创发言。跳过纯粹的网络热词堆砌和复读。
 金句是单句成立的发言——需要上下文才能看懂的片段不要选，那部分由「高光对话」负责。
@@ -57,7 +57,7 @@ export const GOLDEN_QUOTES =
 \`\`\``
 
 export const HIGHLIGHT_DIALOGUES =
-`请从下面的群聊记录中截取最多 {maxHighlightDialogues} 段「高光对话」。
+  `请从下面的群聊记录中截取最多 {maxHighlightDialogues} 段「高光对话」。
 
 「高光对话」指同时满足以下两条的连续多轮发言，缺一不可：
 
@@ -90,10 +90,8 @@ export const HIGHLIGHT_DIALOGUES =
     - sender: "昵称"
       content: |-
         原文照抄
-  academicPoint: |-
-    涉及的学科与具体概念，纯文本一句话
   reason: |-
-    冷幽默的笑点在哪，纯文本一句话
+    笑点在哪，纯文本一句话
 \`\`\`
 
 如果没有任何符合条件的对话，返回空列表：
@@ -102,7 +100,7 @@ export const HIGHLIGHT_DIALOGUES =
 \`\`\``
 
 export const QUERY =
-`你是群聊记录问答助手。请只依据下面的群聊记录回答用户的问题。
+  `你是群聊记录问答助手。请只依据下面的群聊记录回答用户的问题。
 
 规则：
 - 记录里没有的信息，直接说明"记录中没有相关内容"，不要编造
@@ -119,7 +117,7 @@ export const QUERY =
 用户问题：{query}`
 
 export const USER_PERSONA =
-`你是一名社群观察员。请基于该用户的聊天记录，给出一份中性、克制的用户画像。
+  `你是一名社群观察员。请基于该用户的聊天记录，给出一份中性、克制的用户画像。
 
 步骤：
 1. 通读「聊天记录」，这是该用户最近 {lookbackDays} 天的发言

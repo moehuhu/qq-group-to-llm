@@ -74,7 +74,6 @@ export function renderDialogues(digest: DialogueDigest): string {
     for (const line of dialogue.lines) {
       lines.push(`> **${escapeMarkdown(line.sender || '匿名')}：**${escapeMarkdown(line.content)}`)
     }
-    if (dialogue.academicPoint) lines.push(`**🎓 学术要素：** ${escapeMarkdown(dialogue.academicPoint)}`)
     if (dialogue.reason) lines.push(`**❄️ 冷在哪：** ${escapeMarkdown(dialogue.reason)}`)
     lines.push('')
   }

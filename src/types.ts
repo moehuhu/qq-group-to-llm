@@ -36,8 +36,6 @@ export interface HighlightDialogue {
   title?: string
   /** 按原始时间正序的对话轮次 */
   lines: HighlightLine[]
-  /** 涉及的学科与具体概念 */
-  academicPoint?: string
   /** 冷幽默的笑点所在 */
   reason?: string
 }

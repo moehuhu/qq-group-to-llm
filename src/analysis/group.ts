@@ -114,7 +114,6 @@ export function normalizeDialogue(
   return {
     title: item?.title?.trim() || undefined,
     lines,
-    academicPoint: item?.academicPoint?.trim() || undefined,
     reason: item?.reason?.trim() || undefined,
   }
 }
