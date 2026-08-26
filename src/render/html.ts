@@ -168,18 +168,11 @@ const stat = (value: string | number, label: string) =>
   `<div class="stat"><div class="stat-value">${escapeHtml(String(value))}</div>` +
   `<div class="stat-label">${escapeHtml(label)}</div></div>`
 
-/** 一段高光对话：按发言人轮流左右排布，还原聊天气泡的观感 */
+/** 一段高光对话：逐轮自上而下，气泡一律靠左，发言人靠头像与名字区分 */
 function renderDialogue(dialogue: HighlightDialogue): string {
-  // 发言人首次出现的顺序决定左右，同一个人始终在同一侧
-  const sides = new Map<string, number>()
-  for (const line of dialogue.lines) {
-    if (!sides.has(line.sender)) sides.set(line.sender, sides.size)
-  }
-
   const turns = dialogue.lines.map((line) => {
     const name = line.sender || '匿名'
-    const right = (sides.get(line.sender) ?? 0) % 2 === 1
-    return `<div class="turn${right ? ' right' : ''}">` +
+    return `<div class="turn">` +
       avatarTag(name, line.avatar, 'avatar') +
       `<div class="bubble-wrap">` +
       `<div class="speaker">${escapeHtml(name)}</div>` +

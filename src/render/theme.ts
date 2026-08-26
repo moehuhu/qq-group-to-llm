@@ -190,7 +190,7 @@ body {
   border-radius: 999px;
 }
 
-/* 高光对话：还原一来一回的聊天节奏 */
+/* 高光对话：逐轮自上而下，气泡一律靠左 */
 .dialogue {
   padding: 16px 16px 14px;
   margin-bottom: 12px;
@@ -207,7 +207,6 @@ body {
   border-bottom: 1px dashed #dfe4f0;
 }
 .turn { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
-.turn.right { flex-direction: row-reverse; }
 .avatar {
   position: relative;
   flex: 0 0 auto;
@@ -221,7 +220,6 @@ body {
   overflow: hidden;
 }
 .bubble-wrap { max-width: 78%; }
-.turn.right .bubble-wrap { text-align: right; }
 .speaker { font-size: 11.5px; color: var(--muted); padding: 0 4px 3px; }
 .bubble {
   display: inline-block;
@@ -229,19 +227,12 @@ body {
   padding: 9px 13px;
   font-size: 14px;
   line-height: 1.65;
-  text-align: left;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px 14px 14px 4px;
   white-space: pre-wrap;
   word-break: break-word;
-}
-.turn.right .bubble {
-  color: #fff;
-  background: linear-gradient(135deg, #6478f7, #8b5cf6);
-  border-color: transparent;
-  border-radius: 14px 14px 4px 14px;
 }
 
 /* 对话脚注：学术要素与笑点说明 */
