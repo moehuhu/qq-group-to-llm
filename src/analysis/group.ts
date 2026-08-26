@@ -4,6 +4,7 @@ import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { stripPlatformMarkup } from '../text'
+import { layoutRecord } from '../transcript'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
@@ -69,11 +70,16 @@ export function blockedNames(messages: MessageRecord[], blocked: string[]): Set<
   return names
 }
 
-/** 把消息渲染成投喂给 LLM 的文本 */
+/**
+ * 把消息渲染成投喂给 LLM 的文本，一条记录一段，行首是时间与发言人。
+ * 正文本身可能是多行的（合并转发的「群聊的聊天记录」就是一整块），
+ * 续行由 layoutRecord 缩进，免得被当成另一个人的发言。
+ */
 export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
-  return messages.map((message) => {
-    return `[${time.time(message.timestamp)}] ${message.username || message.userId}: ${message.content}`
-  }).join('\n')
+  return messages.map((message) => layoutRecord(
+    `[${time.time(message.timestamp)}] ${message.username || message.userId}: `,
+    message.content,
+  )).join('\n')
 }
 
 /** 规整金句：缺原文的直接丢弃 */

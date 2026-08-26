@@ -5,6 +5,7 @@ import { logger } from '../logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { stripPlatformMarkup } from '../text'
+import { layoutRecord } from '../transcript'
 import type { UserPersonaProfile } from '../types'
 
 export interface PersonaTarget {
@@ -55,12 +56,19 @@ async function collectMessages(
   }))
 }
 
-/** 带 <msgid:…> 锚点渲染，供模型在 evidence 中引用 */
+/**
+ * 带 <msgid:…> 锚点渲染，供模型在 evidence 中引用。
+ * 锚点只在行首出现一次，所以多行正文的续行必须缩进——
+ * 否则锚点会被算到它后面那几行头上，evidence 引用的原文就对不上了。
+ */
 function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
   return messages.map((message) => {
     const scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
     const anchor = message.messageId || message.id
-    return `[${time.dateTime(message.timestamp)}] ${scope} <msgid:${anchor}> ${message.content}`
+    return layoutRecord(
+      `[${time.dateTime(message.timestamp)}] ${scope} <msgid:${anchor}> `,
+      message.content,
+    )
   }).join('\n')
 }
 
