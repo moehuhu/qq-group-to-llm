@@ -34,8 +34,17 @@
   "dependencies": {
     "js-yaml": "^4.1.0"
   },
+  "scripts": {
+    "build": "yakumo build",
+    "clean": "yakumo clean",
+    "pub": "yakumo publish"
+  },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "koishi-plugin-puppeteer": "^3.9.0"
+    "koishi-plugin-puppeteer": "^3.9.0",
+    "typescript": "^5.6.2",
+    "yakumo": "^1.0.0",
+    "yakumo-esbuild": "^1.0.0",
+    "yakumo-tsc": "^1.0.0"
   }
 }

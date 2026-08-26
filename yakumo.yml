@@ -1,0 +1,15 @@
+- id: 0wh7a1
+  name: yakumo
+  config:
+    pipeline:
+      build:
+        - tsc
+        - esbuild
+      clean:
+        - tsc --clean
+- id: 7x0wq2
+  name: yakumo-esbuild
+- id: 4jv3r8
+  name: yakumo-tsc
+- id: haafyy
+  name: yakumo/run
