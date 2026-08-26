@@ -2,7 +2,7 @@ import { Context, Element, Session } from 'koishi'
 import type { Config } from '../config'
 import { MessageRecord, TABLE } from '../database'
 import { logger } from '../logger'
-import { stripPlatformMarkup } from '../text'
+import { decodePlatformMarkup, faceToken } from '../text'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
@@ -28,6 +28,10 @@ function serializeNodes(nodes: Element[], config: Config, nested = false): strin
       return !nested && config.recordImages
         ? `[图片](${el.attrs['src'] || el.attrs['url'] || ''})`
         : '[图片]'
+    } else if (el.type === 'emoji' || el.type === 'face') {
+      // 表情元素带的 name 就是 QQ 里显示的名字（「[安详]」之类）。
+      // 落到下面的兜底分支只会存下一个 [emoji]，这句话说了什么就没了。
+      return faceToken(String(el.attrs['name'] ?? '')) || '[表情]'
     } else if (el.type === 'quote') {
       return config.recordQuotes ? `[引用]${serializeNodes(el.children, config, true)}` : '[引用]'
     } else if (nested && el.children?.length) {
@@ -40,7 +44,7 @@ function serializeNodes(nodes: Element[], config: Config, nested = false): strin
 function buildRecord(session: Session, config: Config): MessageRecord {
   const suffix = session.messageId ||
     `${session.selfId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const content = stripPlatformMarkup(serializeNodes(session.elements ?? [], config))
+  const content = decodePlatformMarkup(serializeNodes(session.elements ?? [], config))
   return {
     id: `${session.platform}_${suffix}`,
     platform: session.platform,
@@ -51,7 +55,7 @@ function buildRecord(session: Session, config: Config): MessageRecord {
     username: session.username || '',
     // 头像地址随发言一起留存：事后渲染时平台接口未必还查得到这个人
     avatar: session.author?.avatar || '',
-    content: content || stripPlatformMarkup(session.content) || '',
+    content: content || decodePlatformMarkup(session.content) || '',
     timestamp: new Date(session.timestamp),
     messageId: session.messageId || '',
   }

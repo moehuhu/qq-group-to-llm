@@ -5,7 +5,7 @@
  */
 import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
 import { STYLE } from './theme'
-import { stripPlatformMarkup } from '../text'
+import { decodePlatformMarkup } from '../text'
 
 const toArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String).filter(Boolean) : []
@@ -49,8 +49,8 @@ function imageTag(url: string | undefined): string {
  * 不做这一步的话，群里发的图在报告里就是一行扎眼的 `[图片](https://...)` 原文。
  */
 export function renderMessageContent(text: string): string {
-  // 数据在入库和读取时都清过一遍，这里再兜一道：模型可能把残标记原样抄回结果里
-  const source = stripPlatformMarkup(text)
+  // 数据在入库和读取时都还原过一遍，这里再兜一道：模型可能把残标记原样抄回结果里
+  const source = decodePlatformMarkup(text)
   const out: string[] = []
   let images: string[] = []
 

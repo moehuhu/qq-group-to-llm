@@ -4,7 +4,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
-import { stripPlatformMarkup } from '../text'
+import { decodePlatformMarkup } from '../text'
 import { layoutRecord } from '../transcript'
 import type { UserPersonaProfile } from '../types'
 
@@ -52,7 +52,7 @@ async function collectMessages(
     (records.length >= config.personaMaxMessages ? `（已达 personaMaxMessages=${config.personaMaxMessages} 上限）` : ''))
   return records.reverse().map((record) => ({
     ...record,
-    content: stripPlatformMarkup(record.content),
+    content: decodePlatformMarkup(record.content),
   }))
 }
 
@@ -219,7 +219,7 @@ export async function resolveEvidence(
     byId.set(record.id, record)
   }
   const quotes = ids.map((id) => byId.get(id)?.content)
-    .filter(Boolean).map((content) => stripPlatformMarkup(content)) as string[]
+    .filter(Boolean).map((content) => decodePlatformMarkup(content)) as string[]
   if (quotes.length < ids.length) {
     log.debug(`证据回查: ${ids.length} 个 msgid 命中 ${quotes.length} 条原文，其余已被清理或删除`)
   }
