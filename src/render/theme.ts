@@ -3,16 +3,39 @@
  *
  * 与 HTML 结构分开存放，改版面时不用翻模板字符串。
  * 只用系统字体与纯 CSS，不引任何外部资源——截图前不需要等网络，
- * 离线环境下渲染结果也完全一致。
+ * 离线环境下渲染结果也完全一致。emoji 同理，走系统装的字体，不内嵌字体文件。
  */
 
 /** 中英文都能覆盖的系统字体栈，按 macOS / Windows / Linux 依次回退 */
-const FONT_STACK = [
+const TEXT_FONTS = [
   '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"',
   '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"',
   '"Noto Sans CJK SC"', '"Source Han Sans SC"', '"WenQuanYi Micro Hei"',
-  'sans-serif',
-].join(', ')
+]
+
+/**
+ * 彩色 emoji 字体，同样按 macOS / Windows / Linux 依次回退。
+ *
+ * 版面自己不写 emoji，但群消息里有的是——正文字体一个都不含 emoji 码位，
+ * 不点名这几个族，Linux 上就是一排方框。
+ *
+ * 位置有讲究：
+ * - 排在正文字体**之后**——中英文先由正文字体挑走，emoji 字体只兜住它们
+ *   没有的码位，`©` `®` `▶` 这类符号不会被顺手换成彩图。
+ * - 排在 `sans-serif` **之前**——泛型族一定匹配得上，虽然 Chrome 对缺字仍会
+ *   继续往后找，但放在它前面结果更确定，不依赖这个行为。
+ *
+ * 光点名不够，机器上得真装着这个字体：官方镜像见 docker/Dockerfile 里的
+ * `font-noto-emoji`；自建环境装 fonts-noto-color-emoji（Debian/Ubuntu）
+ * 或 font-noto-emoji（Alpine）即可。装不上也只是 emoji 变方框，
+ * 其余版面照常，不会让渲染失败。
+ */
+const EMOJI_FONTS = [
+  '"Apple Color Emoji"', '"Segoe UI Emoji"',
+  '"Noto Color Emoji"', '"Twemoji Mozilla"', '"EmojiOne Color"', '"Android Emoji"',
+]
+
+const FONT_STACK = [...TEXT_FONTS, ...EMOJI_FONTS, 'sans-serif'].join(', ')
 
 export const STYLE = `
 * { margin: 0; padding: 0; box-sizing: border-box; }
