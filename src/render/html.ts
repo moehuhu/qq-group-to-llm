@@ -2,6 +2,11 @@
  * 把分析结果渲染成用于截图的 HTML，纯函数，不依赖 Context。
  * 与 analysis/report.ts 的 markdown 渲染并行存在：同一份数据两种出口，
  * 开关关闭或 puppeteer 不可用时仍旧走 markdown。
+ *
+ * 版面文案里不要写 emoji。截图跑在 puppeteer 里，字体栈全是系统字体，
+ * 服务器上的 Linux 常常没装 Noto Color Emoji，标题上的图标会直接变成方框
+ * ——markdown 那条出口不受影响，emoji 由聊天客户端自己渲染，那边照旧用。
+ * 用户内容里的 emoji 是数据，原样透传，这条只约束模板自己写死的字符。
  */
 import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
 import { STYLE } from './theme'
@@ -33,13 +38,13 @@ function safeImageUrl(url: string | undefined): string | undefined {
 }
 
 /**
- * 一张消息图片。图片盖在「🖼 图片」小标签上，
+ * 一张消息图片。图片盖在「图片」小标签上，
  * 加载失败时 img 自我移除，:has() 失配，标签自动露出来——
  * 图链失效（QQ 的图片地址会过期）时不至于只剩一块空白。
  */
 function imageTag(url: string | undefined): string {
   const safe = safeImageUrl(url)
-  return `<span class="msg-img-wrap"><span class="msg-img-chip">🖼 图片</span>` +
+  return `<span class="msg-img-wrap"><span class="msg-img-chip">图片</span>` +
     (safe ? `<img class="msg-img" src="${escapeHtml(safe)}" alt="" onerror="this.remove()">` : '') +
     `</span>`
 }
@@ -228,7 +233,7 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
 
   parts.push(
     `<div class="banner">` +
-    `<div class="banner-title">📊 群聊分析报告</div>` +
+    `<div class="banner-title">群聊分析报告</div>` +
     `<div class="banner-sub">${escapeHtml(result.groupName)}</div>` +
     `<div class="banner-sub">${escapeHtml(result.timeRange)}</div>` +
     `</div>`,
@@ -262,7 +267,7 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
 
   // 金句：多列，金句短，一行一句太浪费横向空间
   const quotesHtml = result.quotes.length
-    ? section('✨ 金句', group(result.quotes.map((quote) =>
+    ? section('金句', group(result.quotes.map((quote) =>
       `<div class="quote">` +
       `<div class="quote-text">${renderMessageContent(quote.content)}</div>` +
       `<div class="quote-meta">—— ${escapeHtml(quote.sender || '匿名')}</div>` +
@@ -288,16 +293,16 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
         `<div class="rank-bar"><div class="rank-fill" style="width:${ratio}%"></div></div>` +
         `</div></div>`
     }).join('')
-    ranksHtml = section('🔥 活跃榜', group(rows, result.userStats.length, 2, width))
+    ranksHtml = section('活跃榜', group(rows, result.userStats.length, 2, width))
   }
 
   // 分节通栏纵向堆叠，分栏发生在各板块内部
   parts.push(`<div class="body">${[
-    section('💬 热门话题', topics),
+    section('热门话题', topics),
     quotesHtml,
     ranksHtml,
     // 活跃时段固定压在报告最底部
-    section('🕓 活跃时段', renderHourly(result.hourly ?? [], result.totalMessages)),
+    section('活跃时段', renderHourly(result.hourly ?? [], result.totalMessages)),
   ].filter(Boolean).join('')}</div>`)
   parts.push(
     `<div class="footer"><span>${escapeHtml(result.groupName)}</span>` +
@@ -313,7 +318,7 @@ export function renderDialoguesHtml(digest: DialogueDigest, width: number): stri
 
   parts.push(
     `<div class="banner">` +
-    `<div class="banner-title">🧊 高光对话</div>` +
+    `<div class="banner-title">高光对话</div>` +
     `<div class="banner-sub">${escapeHtml(digest.groupName)}</div>` +
     `<div class="banner-sub">${escapeHtml(digest.timeRange)}</div>` +
     `</div>`,
@@ -351,7 +356,7 @@ export function renderPersonaHtml(
     `</div></div></div>`,
   )
 
-  const summaryHtml = section('📝 整体印象',
+  const summaryHtml = section('整体印象',
     `<div class="summary">${escapeHtml(persona.summary?.trim() || '（无总结）')}</div>`, true)
 
   let pointsHtml = ''
@@ -361,26 +366,26 @@ export function renderPersonaHtml(
   if (traits.length || interests.length || style) {
     const fields: string[] = []
     if (traits.length) {
-      fields.push(`<div class="field"><span class="field-label">🏷 性格特质</span>` +
+      fields.push(`<div class="field"><span class="field-label">性格特质</span>` +
         `<span class="field-value"><span class="chips">` +
         traits.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join('') +
         `</span></span></div>`)
     }
     if (interests.length) {
-      fields.push(`<div class="field"><span class="field-label">🎯 关注领域</span>` +
+      fields.push(`<div class="field"><span class="field-label">关注领域</span>` +
         `<span class="field-value"><span class="chips">` +
         interests.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join('') +
         `</span></span></div>`)
     }
     if (style) {
-      fields.push(`<div class="field"><span class="field-label">🗣 表达风格</span>` +
+      fields.push(`<div class="field"><span class="field-label">表达风格</span>` +
         `<span class="field-value">${escapeHtml(style)}</span></div>`)
     }
-    pointsHtml = section('🔍 画像要点', fields.join(''), true)
+    pointsHtml = section('画像要点', fields.join(''), true)
   }
 
   const evidenceHtml = evidence.length
-    ? section('📌 代表发言',
+    ? section('代表发言',
       evidence.map((quote) => `<div class="evidence">${renderMessageContent(quote)}</div>`).join(''))
     : ''
 
