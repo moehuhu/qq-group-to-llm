@@ -400,6 +400,52 @@ body {
 /* 引用条里的图片占位符跟着文字走：预览就一行，不该被撑成上下两截 */
 .msg-quote .msg-media { display: inline; margin: 0; line-height: inherit; }
 
+/* 消息里的合并转发：一张小卡片，一行一句，名字与正文分两列对齐 */
+/* 两列网格：名字一列、正文一列，整张卡片共用一套列宽，各行才对得齐 */
+.msg-fwd {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  margin: 4px 0;
+  padding: 8px 11px 7px;
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  /* 卡片自己按行排版，不吃气泡的 pre-wrap——那会在行与行之间多顶出一个空行 */
+  white-space: normal;
+}
+.msg-fwd:first-child { margin-top: 0; }
+.msg-fwd:last-child { margin-bottom: 0; }
+.msg-fwd-head, .msg-fwd-more { grid-column: 1 / -1; }
+.msg-fwd-head {
+  padding-bottom: 6px;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+/* 名字右对齐贴着正文：转发里同一个人常连着说好几句，对齐了才一眼看出换人没有 */
+.msg-fwd-name {
+  max-width: 96px;
+  text-align: right;
+  font-weight: 600;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg-fwd-text {
+  color: var(--ink);
+  /* 转发的正文可能是多行的，换行要留着 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-fwd-more { padding-top: 2px; font-size: 12px; color: var(--muted); }
+
 /* 消息里的图片 */
 /* 图片自成一行；line-height:0 去掉 inline-block 底部那道基线缝隙 */
 .msg-media {

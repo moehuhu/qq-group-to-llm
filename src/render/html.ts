@@ -10,7 +10,7 @@
  */
 import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
 import { STYLE } from './theme'
-import { decodePlatformMarkup } from '../text'
+import { cleanContent } from '../text'
 
 const toArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String).filter(Boolean) : []
@@ -66,16 +66,79 @@ function quoteBar(name: string, text: string): string {
 }
 
 /**
- * 渲染一条消息正文：文字转义，图片占位符换成真正的图片。
+ * 合并转发。text.ts 已经把平台那一大块排版文本压成了标题 + 一行一句：
+ *
+ *     [群聊的聊天记录]
+ *     张三: 你好
+ *     李四: hello
+ *
+ * 卡片一开就排到消息末尾，前面可能还有别的正文（`@某人 看这个` 之类），那截照常渲染。
+ */
+const FORWARD_PATTERN = /(?:^|\n)\[([^\]\n]*聊天记录)\]\n([\s\S]+)$/
+
+/** 卡片里最多列几条。转发几十条的截图会长得没法看，剩下的折成一行计数 */
+const FORWARD_MAX_ROWS = 8
+
+/** 一条转发记录的行首 `昵称: `。昵称不含冒号，长度与入库时的上限一致 */
+const FORWARD_SENDER = /^([^\s:：][^:：]{0,23})[:：][ \t]*(.*)$/
+
+/** 把压平后的卡片正文拆回逐条。缩进的行是上一条的续行，入库时就是这么排的 */
+function forwardEntries(block: string): { sender: string, content: string }[] {
+  const entries: { sender: string, content: string }[] = []
+  for (const line of block.split('\n')) {
+    if (!line.trim()) continue
+    if (/^\s/.test(line) && entries.length) {
+      entries[entries.length - 1].content += `\n${line.trim()}`
+      continue
+    }
+    const sender = FORWARD_SENDER.exec(line)
+    entries.push(sender
+      ? { sender: sender[1], content: sender[2] }
+      : { sender: '', content: line.trim() })
+  }
+  return entries
+}
+
+/**
+ * 一张转发卡片。名字与内容分成两列对齐——转发的都是别人说的话，
+ * 一行一句、名字对齐才看得出这是一段记录，而不是本人一口气说了这么多。
+ */
+function forwardCard(title: string, block: string): string {
+  const entries = forwardEntries(block)
+  if (!entries.length) return renderInline(`[${title}]\n${block}`)
+
+  // 名字与正文直接铺进卡片这张两列网格，不套行容器——
+  // 套了每行各自成格，名字列就按各行自己的宽度走，对不齐
+  const rows = entries.slice(0, FORWARD_MAX_ROWS).map((entry) =>
+    `<span class="msg-fwd-name">${escapeHtml(entry.sender || '匿名')}</span>` +
+    `<span class="msg-fwd-text">${renderInline(entry.content)}</span>`).join('')
+  const rest = entries.length - FORWARD_MAX_ROWS
+  return `<div class="msg-fwd">` +
+    `<div class="msg-fwd-head">${escapeHtml(title)} · ${entries.length} 条</div>` +
+    rows +
+    (rest > 0 ? `<div class="msg-fwd-more">还有 ${rest} 条</div>` : '') +
+    `</div>`
+}
+
+/**
+ * 渲染一条消息正文：文字转义，图片占位符换成真正的图片，
+ * 引用与合并转发各自成块。
  * 不做这一步的话，群里发的图在报告里就是一行扎眼的 `[图片](https://...)` 原文。
  */
 export function renderMessageContent(text: string): string {
-  // 数据在入库和读取时都还原过一遍，这里再兜一道：模型可能把残标记原样抄回结果里
-  const source = decodePlatformMarkup(text)
+  // 数据在入库和读取时都清过一遍，这里再兜一道：模型可能把残标记原样抄回结果里
+  const source = cleanContent(text)
   const quote = source.match(QUOTE_PATTERN)
-  if (!quote) return renderInline(source)
+  if (!quote) return renderBody(source)
   return quoteBar(quote[1]?.trim() ?? '', quote[2]?.trim() ?? '') +
-    renderInline(source.slice(quote[0].length))
+    renderBody(source.slice(quote[0].length))
+}
+
+/** 引用条之后的正文：带转发卡片就把卡片单独画出来，其余按普通正文排 */
+function renderBody(source: string): string {
+  const forward = source.match(FORWARD_PATTERN)
+  if (!forward) return renderInline(source)
+  return renderInline(source.slice(0, forward.index)) + forwardCard(forward[1], forward[2])
 }
 
 /** 正文本体：转义文字，把图片占位符换成图片 */

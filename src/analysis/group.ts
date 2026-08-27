@@ -3,7 +3,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
-import { decodePlatformMarkup } from '../text'
+import { cleanContent } from '../text'
 import { layoutRecord } from '../transcript'
 import { MessageRecord, TABLE } from '../database'
 import type {
@@ -40,10 +40,11 @@ export async function fetchMessages(
 
   log.info(`取到频道 ${target.channelId} 最近 ${days} 天的 ${records.length} 条消息` +
     (records.length >= config.maxMessages ? `（已达 maxMessages=${config.maxMessages} 上限，更早的消息被截断）` : ''))
-  // 老记录里可能还留着平台的残标记，读出来就地还原，省得渲染和提示词各处理一遍
+  // 老记录里可能还留着平台的残标记、没压过的转发排版块，读出来就地清一遍，
+  // 省得渲染和提示词各处理一次
   return records.reverse().map((record) => ({
     ...record,
-    content: decodePlatformMarkup(record.content),
+    content: cleanContent(record.content),
   }))
 }
 
