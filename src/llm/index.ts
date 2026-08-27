@@ -4,7 +4,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import type { AnalysisContext, GoldenQuote, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
 import {
-  describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairBlockScalars,
+  describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairYaml,
 } from './prompt'
 
 export class LLMService extends Service {
@@ -234,8 +234,8 @@ export class LLMService extends Service {
     try {
       data = load(yaml) as T | T[]
     } catch (error) {
-      // 多行原话的续行缩进被写坏是最常见的一种坏格式，按块标量规则修一遍再试
-      const repaired = repairBlockScalars(yaml)
+      // 缩进、列表标记这类格式毛病模型偶尔会犯，先修一遍再试
+      const repaired = repairYaml(yaml)
       let recovered: T | T[] | undefined
       if (repaired !== yaml) {
         try {
@@ -248,7 +248,7 @@ export class LLMService extends Service {
         this.log.error(`[${task}] YAML 解析失败，完整 YAML:\n${yaml}`)
         throw error
       }
-      this.log.warn(`[${task}] YAML 缩进有误，已自动修正后解析成功。原始 YAML:\n${yaml}`)
+      this.log.warn(`[${task}] YAML 格式有误，已自动修正后解析成功。原始 YAML:\n${yaml}`)
       data = recovered
     }
 

@@ -24,6 +24,21 @@ export function extractYaml(raw: string): string | null {
  */
 const BLOCK_HEADER = /^(\s*(?:-\s+)*)(?:.*?:\s*)?[|>][+-]?(\d*)\s*$/
 
+/** markdown 列表标记：`1.`、`2)`、`*`、`+`——`-` 本身就是合法 YAML，不动 */
+const LIST_MARKER = /^(\s*)(\d+[.)]|[*+])(\s+)/
+
+/**
+ * 把 markdown 列表标记换成 `- `。
+ * 模型偶尔用 `1. title:` 给顶层列表编号，而它下面几行的缩进是照着 `1. ` 的宽度对齐的，
+ * 所以用空格把 `-` 补到一样宽，后面整块内容都不用动。
+ */
+function normalizeListMarker(line: string): string {
+  const marker = line.match(LIST_MARKER)
+  if (!marker) return line
+  const width = marker[2].length + marker[3].length
+  return marker[1] + '-' + ' '.repeat(width - 1) + line.slice(marker[0].length)
+}
+
 /** 缩进不足的那行是不是新的键或列表项——是的话说明块标量本来就该在这里结束 */
 function looksStructural(text: string): boolean {
   return /^-(\s|$)/.test(text) || /^(?:"[^"]*"|'[^']*'|[^\s"'#][^:]*):(\s|$)/.test(text)
@@ -34,21 +49,23 @@ function indentOf(line: string): number {
 }
 
 /**
- * 修正块标量里被写坏的缩进。
+ * 修正模型写坏的 YAML 格式，只处理两类反复出现的毛病：
  *
- * 模型抄多行原话时经常只给第一行正确缩进，续行随手少打几个空格，
- * js-yaml 就会报 `bad indentation of a sequence entry`。
- * 这里按块标量的规则重新对齐：块内缩进不足、又不像新键或列表项的行，
- * 只可能是续行，补齐到基准缩进即可。
+ * 1. 块标量的续行缩进不够——抄多行原话时只给第一行正确缩进，
+ *    后面几行随手少打几个空格，js-yaml 报 `bad indentation of a sequence entry`
+ * 2. 顶层列表用 markdown 的 `1.` 编号而不是 `- `，报 `bad indentation of a mapping entry`
+ *
+ * 块标量内部的文本一律照原样保留：那里的 `1.`、缩进都是原话的一部分。
  */
-export function repairBlockScalars(yaml: string): string {
+export function repairYaml(yaml: string): string {
   const lines = yaml.split('\n')
   const out: string[] = []
   let i = 0
 
   while (i < lines.length) {
-    const header = lines[i].match(BLOCK_HEADER)
-    out.push(lines[i])
+    const line = normalizeListMarker(lines[i])
+    const header = line.match(BLOCK_HEADER)
+    out.push(line)
     i++
     if (!header) continue
 

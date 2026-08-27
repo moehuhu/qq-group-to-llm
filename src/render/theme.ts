@@ -237,14 +237,14 @@ body {
 .avatar {
   position: relative;
   flex: 0 0 auto;
-  width: 36px; height: 36px;
+  width: 64px; height: 64px;
   /* 名字那行占掉的高度，让头像跟气泡第一行齐平而不是跟名字齐平 */
   margin-top: 18px;
   border-radius: 50%;
   color: #fff;
   font-size: 16px;
   font-weight: 600;
-  line-height: 36px;
+  line-height: 64px;
   text-align: center;
   overflow: hidden;
 }
@@ -267,11 +267,11 @@ body {
 }
 
 /* 对话脚注：学术要素与笑点说明 */
-.note { display: flex; gap: 8px; margin-top: 12px; font-size: 14px; line-height: 1.65; color: var(--ink-soft); }
+.note { display: flex; gap: 8px; margin-top: 12px; font-size: 20px; line-height: 1.65; color: var(--ink-soft); }
 .note-tag {
   flex: 0 0 auto;
   padding: 2px 9px;
-  font-size: 12.5px;
+  font-size: 16px;
   font-weight: 600;
   border-radius: 6px;
 }
@@ -392,7 +392,7 @@ body {
   display: block;
   margin-bottom: 6px;
   padding: 5px 10px;
-  font-size: 24px;
+  font-size: 16px;
   line-height: 1.6;
   color: var(--muted);
   /* 淡靛而非 --surface-2：代表发言那块的底色就是 surface-2，同色会糊成一片 */
