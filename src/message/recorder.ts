@@ -94,7 +94,7 @@ function quotePreview(session: Session, config: Config): string {
       ? Element.parse(quote.content)
       : element?.children ?? []
   // 预览只占一行，而被引用的正文未必只有一行（合并转发就是一整块），一律压平
-  const flat = cleanContent(serializeNodes(nodes, config, true))
+  const flat = cleanContent(serializeNodes(nodes, config, true), config.recordImages)
     .replace(/\s+/g, ' ')
     .trim()
   // 按码位切，emoji 的代理对不会被劈成半个字
@@ -112,8 +112,8 @@ function buildRecord(session: Session, config: Config): MessageRecord {
   // 没有元素时才退回 session.content：有元素的话它只是同一份内容的 XML 形态，
   // 里头的 <quote/> 标签原样落库就成了正文里的一段噪音
   const body = elements.length
-    ? cleanContent(serializeNodes(elements, config))
-    : cleanContent(session.content)
+    ? cleanContent(serializeNodes(elements, config), config.recordImages)
+    : cleanContent(session.content, config.recordImages)
   // 引用独占首行：正文可能好几行，混排在一起就分不清哪句是回的、哪句是说的
   const content = [quotePreview(session, config), body].filter(Boolean).join('\n')
   return {

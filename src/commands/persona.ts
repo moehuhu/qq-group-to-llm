@@ -65,7 +65,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
           return outcome.reason ? `无法生成画像：${outcome.reason}。` : '无法生成画像。'
         }
 
-        const evidence = await resolveEvidence(ctx, outcome.persona)
+        const evidence = await resolveEvidence(ctx, config, outcome.persona)
         const note = outcome.cached
           ? outcome.reason
             ? `（${outcome.reason}，展示的是此前的画像）`

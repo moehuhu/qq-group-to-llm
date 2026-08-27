@@ -44,7 +44,7 @@ export async function fetchMessages(
   // 省得渲染和提示词各处理一次
   return records.reverse().map((record) => ({
     ...record,
-    content: cleanContent(record.content),
+    content: cleanContent(record.content, config.recordImages),
   }))
 }
 

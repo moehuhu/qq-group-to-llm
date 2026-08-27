@@ -52,7 +52,7 @@ async function collectMessages(
     (records.length >= config.personaMaxMessages ? `（已达 personaMaxMessages=${config.personaMaxMessages} 上限）` : ''))
   return records.reverse().map((record) => ({
     ...record,
-    content: cleanContent(record.content),
+    content: cleanContent(record.content, config.recordImages),
   }))
 }
 
@@ -201,6 +201,7 @@ export async function resolvePersona(
 /** 把 evidence 中的 messageId 回查成原文 */
 export async function resolveEvidence(
   ctx: Context,
+  config: Config,
   persona: UserPersonaProfile,
   limit = 5,
 ): Promise<string[]> {
@@ -219,7 +220,7 @@ export async function resolveEvidence(
     byId.set(record.id, record)
   }
   const quotes = ids.map((id) => byId.get(id)?.content)
-    .filter(Boolean).map((content) => cleanContent(content)) as string[]
+    .filter(Boolean).map((content) => cleanContent(content, config.recordImages)) as string[]
   if (quotes.length < ids.length) {
     log.debug(`证据回查: ${ids.length} 个 msgid 命中 ${quotes.length} 条原文，其余已被清理或删除`)
   }
