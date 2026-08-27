@@ -222,48 +222,55 @@ body {
   border: 1px solid var(--line);
 }
 .dialogue-title {
-  font-size: 14.5px;
+  font-size: 16px;
   font-weight: 650;
   color: var(--ink);
   padding-bottom: 12px;
   margin-bottom: 12px;
   border-bottom: 1px dashed #dfe4f0;
 }
-.turn { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
+/*
+ * 头像顶对齐。原先是底对齐，一条带图或带转发卡片的发言能有两三百像素高，
+ * 头像被推到最底下，和顶上的名字隔了大半个气泡，谁说的就对不上号了。
+ */
+.turn { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 13px; }
 .avatar {
   position: relative;
   flex: 0 0 auto;
-  width: 30px; height: 30px;
+  width: 34px; height: 34px;
+  /* 名字那行占掉的高度，让头像跟气泡第一行齐平而不是跟名字齐平 */
+  margin-top: 17px;
   border-radius: 50%;
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 30px;
+  line-height: 34px;
   text-align: center;
   overflow: hidden;
 }
 .bubble-wrap { max-width: 78%; }
-.speaker { font-size: 11.5px; color: var(--muted); padding: 0 4px 3px; }
+.speaker { font-size: 12.5px; color: var(--muted); padding: 0 4px 4px; }
 .bubble {
   display: inline-block;
   position: relative;
-  padding: 9px 13px;
-  font-size: 14px;
-  line-height: 1.65;
+  padding: 10px 15px;
+  font-size: 15.5px;
+  line-height: 1.72;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px 14px 14px 4px;
+  /* 缺口开在左上角，对着头像——头像已经挪到顶上了 */
+  border-radius: 4px 14px 14px 14px;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 /* 对话脚注：学术要素与笑点说明 */
-.note { display: flex; gap: 7px; margin-top: 8px; font-size: 12.5px; line-height: 1.6; color: var(--ink-soft); }
+.note { display: flex; gap: 8px; margin-top: 10px; font-size: 13.5px; line-height: 1.65; color: var(--ink-soft); }
 .note-tag {
   flex: 0 0 auto;
-  padding: 1px 8px;
-  font-size: 11.5px;
+  padding: 2px 9px;
+  font-size: 12.5px;
   font-weight: 600;
   border-radius: 6px;
 }
@@ -382,10 +389,10 @@ body {
 /* 消息里的引用：被回复的那条压成一条窄带，浮在正文上方 */
 .msg-quote {
   display: block;
-  margin-bottom: 5px;
-  padding: 4px 9px;
-  font-size: 12.5px;
-  line-height: 1.55;
+  margin-bottom: 6px;
+  padding: 5px 10px;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--muted);
   /* 淡靛而非 --surface-2：代表发言那块的底色就是 surface-2，同色会糊成一片 */
   background: var(--accent-soft);
@@ -407,10 +414,10 @@ body {
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   column-gap: 8px;
   row-gap: 3px;
-  margin: 4px 0;
-  padding: 8px 11px 7px;
-  font-size: 13px;
-  line-height: 1.6;
+  margin: 5px 0;
+  padding: 9px 12px 8px;
+  font-size: 14px;
+  line-height: 1.65;
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -423,7 +430,7 @@ body {
 .msg-fwd-head {
   padding-bottom: 6px;
   margin-bottom: 3px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
@@ -444,12 +451,12 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.msg-fwd-more { padding-top: 2px; font-size: 12px; color: var(--muted); }
+.msg-fwd-more { padding-top: 2px; font-size: 12.5px; color: var(--muted); }
 /* 套娃转发折叠成的标题：排成一枚标签，一眼看出这行不是话，是又一份记录 */
 .msg-fwd-nested {
   display: inline-block;
-  padding: 1px 8px;
-  font-size: 12px;
+  padding: 2px 9px;
+  font-size: 12.5px;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -488,8 +495,8 @@ body {
 .msg-img-wrap:has(img) .msg-img-chip { display: none; }
 .msg-img-chip {
   display: inline-block;
-  padding: 1px 8px;
-  font-size: 12px;
+  padding: 2px 9px;
+  font-size: 12.5px;
   color: var(--muted);
   background: #eef1f7;
   border-radius: 6px;
@@ -500,8 +507,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 13px 7px 11px;
-  font-size: 12.5px;
+  padding: 8px 14px 8px 12px;
+  font-size: 13.5px;
   color: var(--ink-soft);
   background: var(--surface-2);
   border: 1px solid var(--line);

@@ -6,7 +6,7 @@
  */
 import { Context } from 'koishi'
 // 仅为拿到 ctx.puppeteer 的类型增强；type-only 导入不会产生运行时依赖
-import type {} from 'koishi-plugin-puppeteer'
+import type { } from 'koishi-plugin-puppeteer'
 import type { Config } from '../config'
 import { logger } from '../logger'
 
@@ -46,10 +46,10 @@ export async function renderHtmlToImage(
             image.addEventListener('load', resolve, { once: true })
             image.addEventListener('error', resolve, { once: true })
           }))
-        // 单张图卡住不该拖垮整次渲染，最多等 3 秒
+        // 单张图卡住不该拖垮整次渲染，最多等 10 秒
         return Promise.race([
           Promise.all(pending),
-          new Promise((resolve) => setTimeout(resolve, 3000)),
+          new Promise((resolve) => setTimeout(resolve, 10000)),
         ])
       })
 
