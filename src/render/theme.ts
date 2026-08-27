@@ -213,70 +213,103 @@ body {
   border-radius: 999px;
 }
 
-/* 高光对话：逐轮自上而下，气泡一律靠左 */
+/*
+ * 高光对话。这张图只有一件事要做——把对话读顺，所以字号整体比其余版面大一档：
+ * 气泡正文 21px 是主角，标题 23px 压住它，发言人名与脚注退到 16/17px 当配角，
+ * 头像也从 64px 收到 54px。原先气泡 24px、周围仍是十几 px，主次差得太狠，
+ * 名字和脚注都像被踩扁了。
+ */
 .dialogue {
-  padding: 16px 16px 14px;
-  margin-bottom: 12px;
+  padding: 20px 20px 18px;
+  margin-bottom: 16px;
   background: var(--surface-2);
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid var(--line);
 }
 .dialogue-title {
-  font-size: 17px;
+  font-size: 23px;
   font-weight: 650;
+  line-height: 1.45;
   color: var(--ink);
-  padding-bottom: 12px;
-  margin-bottom: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
   border-bottom: 1px dashed #dfe4f0;
 }
 /*
  * 头像顶对齐。原先是底对齐，一条带图或带转发卡片的发言能有两三百像素高，
  * 头像被推到最底下，和顶上的名字隔了大半个气泡，谁说的就对不上号了。
  */
-.turn { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 13px; }
+.turn { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
 .avatar {
   position: relative;
   flex: 0 0 auto;
-  width: 64px; height: 64px;
-  /* 名字那行占掉的高度，让头像跟气泡第一行齐平而不是跟名字齐平 */
-  margin-top: 18px;
+  width: 54px; height: 54px;
+  /* 名字那行占掉的高度（16 × 1.5 + 5px 下边距），让头像跟气泡第一行齐平而不是跟名字齐平 */
+  margin-top: 29px;
   border-radius: 50%;
   color: #fff;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 64px;
+  line-height: 54px;
   text-align: center;
   overflow: hidden;
 }
-/* 留一成多的余地给对侧的头像与呼吸空间，其余尽量让给正文 */
-.bubble-wrap { max-width: 86%; }
-.speaker { font-size: 13px; color: var(--muted); padding: 0 4px 4px; }
+/* 留一成的余地给对侧的头像与呼吸空间，其余尽量让给正文 */
+.bubble-wrap { max-width: 88%; }
+.speaker { font-size: 16px; line-height: 1.5; color: var(--muted); padding: 0 4px 5px; }
 .bubble {
   display: inline-block;
   position: relative;
-  padding: 11px 16px;
-  font-size: 24px;
-  line-height: 1.7;
+  padding: 13px 20px;
+  font-size: 21px;
+  line-height: 1.75;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
   /* 缺口开在左上角，对着头像——头像已经挪到顶上了 */
-  border-radius: 4px 14px 14px 14px;
+  border-radius: 5px 18px 18px 18px;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 /* 对话脚注：学术要素与笑点说明 */
-.note { display: flex; gap: 8px; margin-top: 12px; font-size: 20px; line-height: 1.65; color: var(--ink-soft); }
+.note { display: flex; gap: 10px; margin-top: 16px; font-size: 17px; line-height: 1.7; color: var(--ink-soft); }
 .note-tag {
   flex: 0 0 auto;
-  padding: 2px 9px;
-  font-size: 16px;
+  padding: 3px 11px;
+  font-size: 14px;
+  line-height: 1.55;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: 7px;
 }
 .note-tag.edu  { color: #b06a12; background: #fdf1de; }
 .note-tag.cold { color: #17867a; background: #ddf5f2; }
+
+/*
+ * 气泡里的消息元素跟着气泡一起放大。这些 msg-* 类同时用在群分析的金句和画像的
+ * 证据里——那两处正文只有十四五 px，全局改会把它们顶破，所以一律限定在 .bubble 内。
+ * 引用条、转发卡片、图注都按气泡正文的八成上下取值，主次不乱。
+ */
+.bubble .msg-quote { margin-bottom: 8px; padding: 6px 12px; font-size: 17px; border-radius: 0 9px 9px 0; }
+.bubble .msg-fwd {
+  margin: 7px 0;
+  padding: 11px 15px 10px;
+  column-gap: 10px;
+  row-gap: 4px;
+  font-size: 17px;
+  border-radius: 12px;
+}
+.bubble .msg-fwd-head { padding-bottom: 7px; margin-bottom: 4px; font-size: 15px; }
+.bubble .msg-fwd-more,
+.bubble .msg-fwd-nested { font-size: 15px; }
+.bubble .msg-fwd-name { max-width: 128px; }
+.bubble .msg-img { max-height: 220px; border-radius: 10px; }
+/* 转发卡片里的图仍只当缩略图，只是跟着放大一档；三个类名压过上面那条 .bubble .msg-img */
+.bubble .msg-fwd .msg-img { max-width: 220px; max-height: 108px; }
+.bubble .msg-img-chip,
+.bubble .msg-video { font-size: 16px; }
+.bubble .msg-video { padding: 9px 16px 9px 13px; gap: 8px; }
+.bubble .msg-video-play { width: 21px; height: 21px; }
 
 /* 金句 */
 .quote {
