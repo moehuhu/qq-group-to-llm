@@ -4,7 +4,8 @@ import type { UserStats } from '../types'
 
 /** 序列化内容中代表表情/图片、引用的占位符 */
 const MEDIA_PATTERN = /\[(图片|face|image|img|sticker|mface)\]/
-const QUOTE_PATTERN = /\[引用\]/
+/** 引用预览带发言人时是 `[引用 张三]`，关掉 recordQuotes 时只有 `[引用]`，两种都算 */
+const QUOTE_PATTERN = /\[引用(?: [^\]]*)?\]/
 
 /** 累加中的计数，不对外暴露 */
 interface Accumulator {

@@ -50,12 +50,36 @@ function imageTag(url: string | undefined): string {
 }
 
 /**
+ * 正文首行的引用预览。recorder 把被引用的那条消息压成 `[引用 张三] 原话`，
+ * 昵称与原话都可能缺席（关掉 recordQuotes 时只剩一个 `[引用]`）。
+ * 只认行首：正文里顺口提到的「[引用]」字样不该被当成引用条。
+ */
+const QUOTE_PATTERN = /^\[引用(?: ([^\]]*))?\](?:[ \t]*([^\n]*))?(?:\n|$)/
+
+/** 引用条：被回复的那句压成一条窄带，浮在正文上方 */
+function quoteBar(name: string, text: string): string {
+  const inner = (name ? `<span class="msg-quote-name">${escapeHtml(name)}</span>` : '') +
+    // 预览里的 `[图片]` 之类占位符照常走正文渲染，只是没有图链，落成一个小标签
+    (text ? `<span class="msg-quote-text">${renderInline(text)}</span>` : '')
+  // 两者都缺（recordQuotes 关着）时也要留下痕迹：这句话确实是回复别人的
+  return `<div class="msg-quote">${inner || `<span class="msg-quote-text">引用</span>`}</div>`
+}
+
+/**
  * 渲染一条消息正文：文字转义，图片占位符换成真正的图片。
  * 不做这一步的话，群里发的图在报告里就是一行扎眼的 `[图片](https://...)` 原文。
  */
 export function renderMessageContent(text: string): string {
   // 数据在入库和读取时都还原过一遍，这里再兜一道：模型可能把残标记原样抄回结果里
   const source = decodePlatformMarkup(text)
+  const quote = source.match(QUOTE_PATTERN)
+  if (!quote) return renderInline(source)
+  return quoteBar(quote[1]?.trim() ?? '', quote[2]?.trim() ?? '') +
+    renderInline(source.slice(quote[0].length))
+}
+
+/** 正文本体：转义文字，把图片占位符换成图片 */
+function renderInline(source: string): string {
   const out: string[] = []
   let images: string[] = []
 

@@ -379,6 +379,27 @@ body {
   word-break: break-word;
 }
 
+/* 消息里的引用：被回复的那条压成一条窄带，浮在正文上方 */
+.msg-quote {
+  display: block;
+  margin-bottom: 5px;
+  padding: 4px 9px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  /* 淡靛而非 --surface-2：代表发言那块的底色就是 surface-2，同色会糊成一片 */
+  background: var(--accent-soft);
+  border-left: 2px solid #c2cbf5;
+  border-radius: 0 7px 7px 0;
+  /* 预览入库时已压成一行，不必继承气泡的 pre-wrap；太长要在这里回绕 */
+  white-space: normal;
+  word-break: break-word;
+}
+.msg-quote-name { font-weight: 600; color: var(--ink-soft); }
+.msg-quote-name::after { content: '\\ff1a'; font-weight: 400; }
+/* 引用条里的图片占位符跟着文字走：预览就一行，不该被撑成上下两截 */
+.msg-quote .msg-media { display: inline; margin: 0; line-height: inherit; }
+
 /* 消息里的图片 */
 /* 图片自成一行；line-height:0 去掉 inline-block 底部那道基线缝隙 */
 .msg-media {

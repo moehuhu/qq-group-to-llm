@@ -8,7 +8,7 @@ export interface Config {
   groups: string[]
   /** 记录图片消息内容（否则仅记录 "图片" 占位符） */
   recordImages: boolean
-  /** 记录引用消息 */
+  /** 记录被引用消息的发言人与原话摘要（关闭时只留 `[引用]` 占位） */
   recordQuotes: boolean
   /** 消息保留天数（0 表示永久保留） */
   retentionDays: number
@@ -89,7 +89,7 @@ export const Config: Schema<Config> = Schema.intersect([
     listenAll: Schema.boolean().default(true).description('监听所有群组（开启后忽略下方"监听群组"配置）'),
     groups: Schema.array(Schema.string()).default([]).description('需要记录的群组 ID 列表，格式 `平台:频道 ID`（listenAll 关闭时生效）'),
     recordImages: Schema.boolean().default(false).description('是否记录图片地址（关闭时图片内容记录为"[图片]"）'),
-    recordQuotes: Schema.boolean().default(true).description('是否记录引用消息的引用内容'),
+    recordQuotes: Schema.boolean().default(true).description('是否记录被引用消息的发言人与原话摘要（存成正文首行 `[引用 张三] 原话`；关闭时只留 `[引用]`）'),
     retentionDays: Schema.number().default(0).min(0).description('消息保留天数，0 表示永久保留'),
     timezone: Schema.string().default('').description('统计与展示所用的时区，填 IANA 名称如 `Asia/Shanghai`。留空跟随运行 Koishi 的机器时区。影响活跃时段柱状图的分桶、报告里的时间范围，以及投喂给模型的逐条时间戳'),
   }).description('消息记录'),
