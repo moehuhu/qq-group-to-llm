@@ -392,7 +392,7 @@ body {
   display: block;
   margin-bottom: 6px;
   padding: 5px 10px;
-  font-size: 13.5px;
+  font-size: 24px;
   line-height: 1.6;
   color: var(--muted);
   /* 淡靛而非 --surface-2：代表发言那块的底色就是 surface-2，同色会糊成一片 */
