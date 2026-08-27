@@ -3,7 +3,9 @@ import { load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import type { AnalysisContext, GoldenQuote, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
-import { describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable } from './prompt'
+import {
+  describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairBlockScalars,
+} from './prompt'
 
 export class LLMService extends Service {
   static inject = ['http']
@@ -232,8 +234,22 @@ export class LLMService extends Service {
     try {
       data = load(yaml) as T | T[]
     } catch (error) {
-      this.log.error(`[${task}] YAML 解析失败，完整 YAML:\n${yaml}`)
-      throw error
+      // 多行原话的续行缩进被写坏是最常见的一种坏格式，按块标量规则修一遍再试
+      const repaired = repairBlockScalars(yaml)
+      let recovered: T | T[] | undefined
+      if (repaired !== yaml) {
+        try {
+          recovered = load(repaired) as T | T[]
+        } catch {
+          // 修完还是解析不了，说明坏在别处，按原始错误报出去
+        }
+      }
+      if (recovered === undefined) {
+        this.log.error(`[${task}] YAML 解析失败，完整 YAML:\n${yaml}`)
+        throw error
+      }
+      this.log.warn(`[${task}] YAML 缩进有误，已自动修正后解析成功。原始 YAML:\n${yaml}`)
+      data = recovered
     }
 
     if (!data) {

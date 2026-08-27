@@ -18,6 +18,73 @@ export function extractYaml(raw: string): string | null {
   return raw.match(/```ya?ml\s*([\s\S]*?)\s*```/)?.[1] ?? null
 }
 
+/**
+ * 块标量头：`detail: |-`、`- content: >`、`- |` 都算。
+ * 捕获缩进（含 `- ` 前缀，取到键所在的列）与显式缩进指示符。
+ */
+const BLOCK_HEADER = /^(\s*(?:-\s+)*)(?:.*?:\s*)?[|>][+-]?(\d*)\s*$/
+
+/** 缩进不足的那行是不是新的键或列表项——是的话说明块标量本来就该在这里结束 */
+function looksStructural(text: string): boolean {
+  return /^-(\s|$)/.test(text) || /^(?:"[^"]*"|'[^']*'|[^\s"'#][^:]*):(\s|$)/.test(text)
+}
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length
+}
+
+/**
+ * 修正块标量里被写坏的缩进。
+ *
+ * 模型抄多行原话时经常只给第一行正确缩进，续行随手少打几个空格，
+ * js-yaml 就会报 `bad indentation of a sequence entry`。
+ * 这里按块标量的规则重新对齐：块内缩进不足、又不像新键或列表项的行，
+ * 只可能是续行，补齐到基准缩进即可。
+ */
+export function repairBlockScalars(yaml: string): string {
+  const lines = yaml.split('\n')
+  const out: string[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const header = lines[i].match(BLOCK_HEADER)
+    out.push(lines[i])
+    i++
+    if (!header) continue
+
+    const keyIndent = header[1].length
+    // 显式指示符（`|2`）直接定基准，否则由块内第一条非空行决定
+    let base = header[2] ? keyIndent + Number(header[2]) : -1
+
+    while (i < lines.length) {
+      const line = lines[i]
+      if (!line.trim()) {
+        out.push(line)
+        i++
+        continue
+      }
+      const indent = indentOf(line)
+      if (base < 0) {
+        // 第一条非空行顶到了键的同列甚至更左，块就成了空的，补到键右侧两格
+        base = indent > keyIndent ? indent : keyIndent + 2
+        out.push(indent > keyIndent ? line : ' '.repeat(base) + line.trim())
+        i++
+        continue
+      }
+      if (indent >= base) {
+        out.push(line)
+        i++
+        continue
+      }
+      if (looksStructural(line.trim())) break
+      out.push(' '.repeat(base) + line.trim())
+      i++
+    }
+  }
+
+  return out.join('\n')
+}
+
 /** 把接口返回的 usage 渲染成一行日志 */
 export function formatUsage(usage?: {
   prompt_tokens?: number
