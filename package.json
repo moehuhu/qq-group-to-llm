@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-qq-group-to-llm",
   "description": "记录 QQ 群消息并使用LLM总结，提取金句和高光对话",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
