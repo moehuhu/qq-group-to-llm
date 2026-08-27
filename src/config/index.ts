@@ -144,8 +144,8 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('把「群分析」报告与「用户画像」渲染成图片发送（需要 puppeteer 服务；未启用或渲染失败时自动回退为文字）'),
     imageWidth: Schema.number().default(1000).min(480).max(1600)
       .description('图片宽度（CSS 像素）。不低于 820 时正文排成两列，低于则单列'),
-    imageScale: Schema.number().default(2).min(1).max(3).step(1)
-      .description('截图缩放倍率，2 即二倍图，越大越清晰但文件也越大'),
+    imageScale: Schema.number().default(1).min(1).max(3).step(1)
+      .description('截图缩放倍率越大越清晰，但文件也越大'),
   }).description('图片渲染'),
 
   Schema.object({
