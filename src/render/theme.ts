@@ -222,7 +222,7 @@ body {
   border: 1px solid var(--line);
 }
 .dialogue-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 650;
   color: var(--ink);
   padding-bottom: 12px;
@@ -237,25 +237,26 @@ body {
 .avatar {
   position: relative;
   flex: 0 0 auto;
-  width: 34px; height: 34px;
+  width: 36px; height: 36px;
   /* 名字那行占掉的高度，让头像跟气泡第一行齐平而不是跟名字齐平 */
-  margin-top: 17px;
+  margin-top: 18px;
   border-radius: 50%;
   color: #fff;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  line-height: 34px;
+  line-height: 36px;
   text-align: center;
   overflow: hidden;
 }
-.bubble-wrap { max-width: 78%; }
-.speaker { font-size: 12.5px; color: var(--muted); padding: 0 4px 4px; }
+/* 留一成多的余地给对侧的头像与呼吸空间，其余尽量让给正文 */
+.bubble-wrap { max-width: 86%; }
+.speaker { font-size: 13px; color: var(--muted); padding: 0 4px 4px; }
 .bubble {
   display: inline-block;
   position: relative;
-  padding: 10px 15px;
-  font-size: 15.5px;
-  line-height: 1.72;
+  padding: 11px 16px;
+  font-size: 24px;
+  line-height: 1.7;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -266,7 +267,7 @@ body {
 }
 
 /* 对话脚注：学术要素与笑点说明 */
-.note { display: flex; gap: 8px; margin-top: 10px; font-size: 13.5px; line-height: 1.65; color: var(--ink-soft); }
+.note { display: flex; gap: 8px; margin-top: 12px; font-size: 14px; line-height: 1.65; color: var(--ink-soft); }
 .note-tag {
   flex: 0 0 auto;
   padding: 2px 9px;
