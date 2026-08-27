@@ -14,15 +14,15 @@ on:
         default: false
         type: boolean
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   publish:
     name: Build & Publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Check out
