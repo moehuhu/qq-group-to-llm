@@ -96,7 +96,6 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
 
 /**
  * 规整模型返回的高光对话：丢掉空轮次、按 maxHighlightLines 截断，
- * 并要求至少两人两轮——只有一个人自说自话的片段不算「对话」。
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  *
  * avatars 是「昵称 → 头像地址」的对照表，用来给每轮发言补上头像；
@@ -120,7 +119,6 @@ export function normalizeDialogue(
     .slice(0, maxLines)
 
   if (lines.length < 2) return null
-  if (new Set(lines.map((line) => line.sender)).size < 2) return null
 
   return {
     title: item?.title?.trim() || undefined,
