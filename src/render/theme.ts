@@ -495,6 +495,38 @@ body {
   border-radius: 6px;
 }
 
+/* 消息里的视频：一块带播放标记的占位块。截图放不了 <video>，见 html.ts */
+.msg-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px 7px 11px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  vertical-align: top;
+  line-height: 1.4;
+}
+/* 播放三角用边框画，不写字符：没装 emoji 字体的机器上 ▶ 会变成方框 */
+.msg-video-play {
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+}
+.msg-video-play::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-45%, -50%);
+  border-left: 6px solid #fff;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
 /* 头像图层：盖在首字色块之上，加载失败时被移除，底下的字自然露出 */
 .avatar-img {
   position: absolute;

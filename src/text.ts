@@ -149,13 +149,37 @@ const FORWARD_MARKER = /^[ \t]*\[(?:消息内容|发送者|发送时间|消息�
 const ATTACHMENT_TYPE = /(?:^|\s)类型[:：][ \t]*(\S+)/
 const ATTACHMENT_URL = /(?:^|\s)URL[:：][ \t]*(\S+)/
 
-/** 附件类型 → 正文里的占位符，用的是元素序列化那边同一套词 */
+/** 转发卡片里的附件类型 → 正文里的占位符，用的是元素序列化那边同一套词 */
 const ATTACHMENT_TOKENS: Record<string, string> = {
   图片: '图片',
   视频: '视频',
   语音: '语音',
   音频: '语音',
   文件: '文件',
+}
+
+/** 带地址的两类。图片出图时能换成真图；视频画一枚播放占位块，地址只作留存 */
+const MEDIA_WITH_URL = new Set(['图片', '视频'])
+
+/**
+ * 正文里的媒体占位符：`[图片](地址)` / `[视频](地址)` / `[语音]` / `[文件]`。
+ * 一处定义，元素序列化、转发卡片、原始附件三条来路共用，免得同一个视频
+ * 一边存成 `[视频]`、一边存成 `[video]`，渲染那头还得认两套。
+ */
+export function mediaToken(kind: string, url?: string, keepUrl = true): string {
+  return keepUrl && url && MEDIA_WITH_URL.has(kind) ? `[${kind}](${url})` : `[${kind}]`
+}
+
+/**
+ * MIME → 占位符类型。QQ 下发的附件带的是 `image/jpeg`、`video/mp4` 这样的 MIME，
+ * 也见过 `file` / `voice` 这类光秃秃的词，两种都认。认不出的一律算文件。
+ */
+export function mediaKind(mime: string | undefined): string {
+  const type = String(mime ?? '').toLowerCase()
+  if (type.startsWith('image')) return '图片'
+  if (type.startsWith('video')) return '视频'
+  if (type.startsWith('audio') || type === 'voice') return '语音'
+  return '文件'
 }
 
 /** 发送者昵称的字数上限，与引用预览同理：名字占满一行就把话挤没了 */
@@ -183,14 +207,13 @@ interface ForwardField {
 
 /**
  * 把附件行压成一个占位符。
- * 只有图片带上地址——出图时它能换成真正的图片，别的类型给了地址也渲染不出来，
+ * 只有图片和视频带上地址，语音、文件给了地址也渲染不出来，
  * 白白在正文里留一串两百多字符的 URL。文件名、尺寸、大小一律丢掉：
  * 这些是卡片上的装饰，不是谁说的话。
  */
 function attachmentToken(field: string, images: boolean): string {
-  const token = ATTACHMENT_TOKENS[ATTACHMENT_TYPE.exec(field)?.[1] ?? ''] || '附件'
-  const url = ATTACHMENT_URL.exec(field)?.[1]
-  return token === '图片' && images && url ? `[图片](${url})` : `[${token}]`
+  const kind = ATTACHMENT_TOKENS[ATTACHMENT_TYPE.exec(field)?.[1] ?? ''] || '附件'
+  return mediaToken(kind, ATTACHMENT_URL.exec(field)?.[1], images)
 }
 
 /** 按标签把一段拆成字段。没有标签的行算上一个字段的续行——正文本身就可能是多行的 */

@@ -2,7 +2,7 @@ import { Context, Element, Session, Universal } from 'koishi'
 import type { Config } from '../config'
 import { MessageRecord, TABLE } from '../database'
 import { logger } from '../logger'
-import { cleanContent, faceToken } from '../text'
+import { cleanContent, faceToken, mediaKind, mediaToken } from '../text'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
@@ -16,18 +16,30 @@ function shouldRecord(session: Session, config: Config): boolean {
   })
 }
 
+/** 媒体元素 → 占位符类型 */
+const ELEMENT_MEDIA: Record<string, string> = {
+  video: '视频',
+  audio: '语音',
+  file: '文件',
+}
+
+/** 媒体元素的地址。satori 统一放在 src 上，个别适配器给的是 url */
+const src = (el: Element): string => String(el.attrs['src'] || el.attrs['url'] || '')
+
 /**
  * 将消息元素序列化为纯文本。
- * 图片、引用等非文本元素替换为占位符，是否展开由配置决定。
+ * 图片、视频、引用等非文本元素替换为占位符，是否留地址由配置决定。
  */
 function serializeNodes(nodes: Element[], config: Config, nested = false): string {
   return nodes.map((el) => {
     if (el.type === 'text') {
       return el.attrs['content'] ?? ''
     } else if (el.type === 'img' || el.type === 'image') {
-      return !nested && config.recordImages
-        ? `[图片](${el.attrs['src'] || el.attrs['url'] || ''})`
-        : '[图片]'
+      return mediaToken('图片', src(el), !nested && config.recordImages)
+    } else if (el.type === 'video' || el.type === 'audio' || el.type === 'file') {
+      // 落到下面的兜底分支会存成 `[video]`，跟转发卡片那边解析出来的 `[视频]` 对不上，
+      // 渲染和统计就得认两套词
+      return mediaToken(ELEMENT_MEDIA[el.type], src(el), !nested && config.recordImages)
     } else if (el.type === 'emoji' || el.type === 'face') {
       // 表情元素带的 name 就是 QQ 里显示的名字（「[安详]」之类）。
       // 落到下面的兜底分支只会存下一个 [emoji]，这句话说了什么就没了。
@@ -105,6 +117,47 @@ function quotePreview(session: Session, config: Config): string {
   return quoteToken(quote ? quoteAuthor(quote) : '', preview)
 }
 
+/**
+ * 平台原始载荷里的附件列表。
+ * 适配器把整份下发载荷挂在 session.event._data 上（satori 的 setInternal），
+ * QQ 的形状是 `{ t, d: { attachments: [...] } }`。别的平台对不上就是空数组，
+ * 什么也不会补——这段只在适配器漏了东西时兜底，不是主路径。
+ */
+function rawAttachments(session: Session): { content_type?: string, url?: string }[] {
+  const list = (session.event as { _data?: { d?: { attachments?: unknown } } })._data?.d?.attachments
+  return Array.isArray(list) ? list : []
+}
+
+/** elements 里已经出现过的媒体地址，用来认出哪些附件被适配器丢在了半路 */
+function mediaUrls(nodes: Element[], urls = new Set<string>()): Set<string> {
+  for (const el of nodes) {
+    const url = src(el)
+    if (url) urls.add(url)
+    if (el.children?.length) mediaUrls(el.children, urls)
+  }
+  return urls
+}
+
+/**
+ * 补回适配器漏掉的附件。
+ *
+ * adapter-qq-crack 转图片时按 `content_type.startsWith('image')` 认，
+ * 转视频和语音却要求 content_type **精确等于** `'video'` / `'voice'`——
+ * 而 QQ 下发的是 MIME（`video/mp4`、`audio/amr`），两个分支等于是死代码。
+ * 于是一条纯视频消息在 elements 里一个元素都不剩，正文也是空的，
+ * 落库就是一条什么都没有的空记录（库里那几条空记录就是这么来的）。
+ *
+ * 所以从原始载荷里按地址比对补一遍：已经转成元素的不补第二遍，
+ * 哪天适配器修好了这里自然就不再出手。
+ */
+function droppedAttachments(session: Session, config: Config): string {
+  const seen = mediaUrls(session.elements ?? [])
+  return rawAttachments(session)
+    .filter((item) => item.url && !seen.has(item.url))
+    .map((item) => mediaToken(mediaKind(item.content_type), item.url, config.recordImages))
+    .join('')
+}
+
 function buildRecord(session: Session, config: Config): MessageRecord {
   const suffix = session.messageId ||
     `${session.selfId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -114,8 +167,12 @@ function buildRecord(session: Session, config: Config): MessageRecord {
   const body = elements.length
     ? cleanContent(serializeNodes(elements, config), config.recordImages)
     : cleanContent(session.content, config.recordImages)
+  // 适配器漏掉的附件接在正文后面。正文是多行（压好的转发卡片）时另起一行——
+  // 直接贴上去会挂到卡片最后一条记录的屁股上，像是那个人发的
+  const dropped = droppedAttachments(session, config)
+  const full = [body, dropped].filter(Boolean).join(body.includes('\n') ? '\n' : '')
   // 引用独占首行：正文可能好几行，混排在一起就分不清哪句是回的、哪句是说的
-  const content = [quotePreview(session, config), body].filter(Boolean).join('\n')
+  const content = [quotePreview(session, config), full].filter(Boolean).join('\n')
   return {
     id: `${session.platform}_${suffix}`,
     platform: session.platform,
@@ -149,6 +206,14 @@ export function applyMessageListener(ctx: Context, config: Config) {
       return
     }
     const record = buildRecord(session, config)
+    if (!record.content) {
+      // 一个字都没解析出来的消息不入库：空记录白占一条条数、把人均字数往下拉，
+      // 投喂给模型的文本里还留一行没有内容的发言。
+      // 打 warn 而不是 debug：这通常意味着又出现了一种没人认得的消息类型
+      const types = (session.elements ?? []).map((el) => el.type).join('/') || '无'
+      log.warn(`跳过无法解析的消息 ${record.id}（元素: ${types}，原始附件: ${rawAttachments(session).length} 个）`)
+      return
+    }
     try {
       await ctx.database.create(TABLE, record)
       recorded++

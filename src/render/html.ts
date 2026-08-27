@@ -26,10 +26,11 @@ export function escapeHtml(value: string | undefined | null): string {
 }
 
 /**
- * 记录里的图片占位符。recorder 把图片元素序列化成 `[图片](地址)`，
- * recordImages 关闭时只留 `[图片]`。
+ * 记录里的媒体占位符：`[图片](地址)` 与 `[视频](地址)`，
+ * recordImages 关闭时（或平台没给地址）只剩 `[图片]` `[视频]`。
+ * 语音、文件不在这里——它们没什么可展示的，当普通文字排就够了。
  */
-const IMAGE_PATTERN = /\[图片\](?:\((https?:\/\/[^\s)]+)\))?/g
+const MEDIA_PATTERN = /\[(图片|视频)\](?:\((https?:\/\/[^\s)]+)\))?/g
 
 /** 只放行 http(s)，别的协议一律当没有地址处理 */
 function safeImageUrl(url: string | undefined): string | undefined {
@@ -47,6 +48,23 @@ function imageTag(url: string | undefined): string {
   return `<span class="msg-img-wrap"><span class="msg-img-chip">图片</span>` +
     (safe ? `<img class="msg-img" src="${escapeHtml(safe)}" alt="" onerror="this.remove()">` : '') +
     `</span>`
+}
+
+/**
+ * 一段视频，画成一块带播放标记的占位块。
+ *
+ * 不放 `<video>`：截图跑在 puppeteer 里，视频既不解码也不会停在第一帧，
+ * 拿到的就是一块黑；QQ 的地址还几分钟就过期，等于给报告留一块必然失效的空白。
+ * 播放三角用 CSS 边框画，不靠字体——`▶` 这类字符在没装 emoji 字体的机器上会变方框。
+ * 地址照旧留在记录里，只是不参与渲染。
+ */
+function videoTag(): string {
+  return `<span class="msg-video"><span class="msg-video-play"></span>视频</span>`
+}
+
+/** 一个媒体占位符 → 一块可视的东西 */
+function mediaTag(kind: string, url: string | undefined): string {
+  return kind === '视频' ? videoTag() : imageTag(url)
 }
 
 /**
@@ -159,7 +177,7 @@ function renderInline(source: string): string {
   const out: string[] = []
   let images: string[] = []
 
-  // 连续的图片并成一个块级容器：图片留在文字行里会把行高撑得老高，
+  // 连续的图片、视频并成一个块级容器：媒体块留在文字行里会把行高撑得老高，
   // 前后的文字被挤成上下两截，读起来很难受
   const flushImages = () => {
     if (!images.length) return
@@ -168,13 +186,13 @@ function renderInline(source: string): string {
   }
 
   let last = 0
-  for (const match of source.matchAll(IMAGE_PATTERN)) {
+  for (const match of source.matchAll(MEDIA_PATTERN)) {
     const before = source.slice(last, match.index)
     if (before.trim()) {
       flushImages()
       out.push(escapeHtml(before.trim()))
     }
-    images.push(imageTag(match[1]))
+    images.push(mediaTag(match[1], match[2]))
     last = match.index + match[0].length
   }
   flushImages()
