@@ -88,20 +88,53 @@ export function decodePlatformMarkup(text: string | undefined | null): string {
  * 出图是一堆 `=== 消息 N ===` 和文件名尺寸糊在气泡里，发文字更惨——markdown 出口
  * 会把换行压成空格，整块挤成一长条。
  *
- * 所以入库前就把它压成一行一句的样子，谁说的写在前面，附件换成正文里通用的占位符：
+ * 转发还能套娃——里头的某一条本身又是一整份聊天记录，里层用另一种分隔行（`--- 第N条 ---`）。
+ *
+ * 所以入库前就把它压成一行一句的样子，谁说的写在前面，附件换成正文里通用的占位符，
+ * 套进去的那份记录只留一个缩略标题：
  *
  *     [群聊的聊天记录]
  *     张三: 你好
  *     李四: [图片](https://…)
+ *     王五: [群聊的聊天记录 4 条]
  *
- * 原话一个字不动，只是把排版行去掉、把发送者提到前面。
+ * 外层的原话一个字不动，只是把排版行去掉、把发送者提到前面。
  */
 
 /** 卡片标题行。平台会区分「群聊的聊天记录」和「聊天记录」，原样留着 */
 const FORWARD_HEADER = /^[ \t]*\[([^\]\n]*聊天记录)\][ \t]*$/
 
-/** 逐条之间的分隔行。见过 `=== 消息 1 ===`，适配器还认 `--- 第1条 ---` */
-const FORWARD_SEPARATOR = /^[ \t]*(?:={2,}[ \t]*消息[ \t]*\d+[ \t]*={2,}|-{2,}[ \t]*第[ \t]*\d+[ \t]*条[ \t]*-{2,})[ \t]*$/
+/**
+ * 逐条之间的分隔行，两种样式：`=== 消息 1 ===` 和 `--- 第1条 ---`。
+ *
+ * 转发是可以套娃的——转发里的某一条本身又是一整份聊天记录。这时两种样式各管一层：
+ * 先出现的那种是外层，另一种就是里层。所以这里不写死谁是外层，
+ * 由 `pickSeparators` 按出场顺序当场认——不然一份套娃转发会被里层的分隔行
+ * 切得七零八落，里层的十几张图全平铺到外层列表里，套了几层根本看不出来。
+ *
+ * 括号里捕的是序号，用来估里层有多少条。
+ */
+const FORWARD_SEPARATOR_STYLES = [
+  /^[ \t]*={2,}[ \t]*消息[ \t]*(\d+)[ \t]*={2,}[ \t]*$/,
+  /^[ \t]*-{2,}[ \t]*第[ \t]*(\d+)[ \t]*条[ \t]*-{2,}[ \t]*$/,
+]
+
+/** 任一样式的分隔行 */
+const isSeparator = (line: string) => FORWARD_SEPARATOR_STYLES.some((style) => style.test(line))
+
+/**
+ * 按出场顺序定下哪种样式是外层。
+ * 只用到一种样式（绝大多数转发）时里层为空，什么都不会被折叠。
+ */
+function pickSeparators(lines: string[]): { outer: RegExp, inner?: RegExp } {
+  for (const line of lines) {
+    const index = FORWARD_SEPARATOR_STYLES.findIndex((style) => style.test(line))
+    if (index >= 0) {
+      return { outer: FORWARD_SEPARATOR_STYLES[index], inner: FORWARD_SEPARATOR_STYLES[1 - index] }
+    }
+  }
+  return { outer: FORWARD_SEPARATOR_STYLES[0] }
+}
 
 /**
  * 条目里的字段标签。只认这几个已知的：
@@ -128,9 +161,18 @@ const ATTACHMENT_TOKENS: Record<string, string> = {
 /** 发送者昵称的字数上限，与引用预览同理：名字占满一行就把话挤没了 */
 const FORWARD_NAME_LIMIT = 24
 
+/** 整条正文就是一个记录标题——套娃转发的那一条长这样 */
+const NESTED_TITLE = /^\[([^\]\n]*聊天记录)\]$/
+
 interface ForwardEntry {
   sender: string
   content: string
+}
+
+/** 切好的一条，加上它里层记录的条数（0 表示这条不是套娃） */
+interface ForwardBlock {
+  lines: string[]
+  nested: number
 }
 
 /** 一个字段：标签加它底下的行。标签为空的那个是打头的无标签正文 */
@@ -163,11 +205,25 @@ function forwardFields(lines: string[]): ForwardField[] {
 }
 
 /**
+ * 套娃转发折叠成的缩略标题：`[群聊的聊天记录 4 条]`。
+ * 条数取里层分隔行上的最大序号，套了三层时序号会重新从 1 数起，
+ * 取最大值至少不会越滚越大——横竖是个「里面还有多少」的量级，不是精确统计。
+ */
+function nestedToken(title: string, count: number): string {
+  const name = title || '聊天记录'
+  return count ? `[${name} ${count} 条]` : `[${name}]`
+}
+
+/**
  * 一条转发记录。正文取无标签的打头行与 `[消息内容]`，附件接在正文后面；
  * 两样都没有就返回 null——只剩个发送者的条目没什么可显示的。
+ *
+ * 这一条本身又是一整份聊天记录时（套娃转发），只留一个缩略标题：
+ * 里层的内容在 `normalizeForward` 里就没往下收——一份四层套娃展开是几十行图片，
+ * 平铺出来既看不出层次，也把报告和提示词撑爆。
  */
-function parseForwardEntry(lines: string[], images: boolean): ForwardEntry | null {
-  const fields = forwardFields(lines)
+function parseForwardEntry(block: ForwardBlock, images: boolean): ForwardEntry | null {
+  const fields = forwardFields(block.lines)
   const join = (label: string) => fields
     .filter((field) => field.label === label)
     .map((field) => field.lines.join('\n'))
@@ -177,7 +233,14 @@ function parseForwardEntry(lines: string[], images: boolean): ForwardEntry | nul
   const media = fields
     .filter((field) => field.label.startsWith('附件'))
     .map((field) => attachmentToken(field.lines.join(' '), images))
-  const content = [join(''), join('消息内容'), ...media].filter(Boolean).join(' ')
+  const body = [join(''), join('消息内容'), ...media].filter(Boolean).join(' ')
+
+  // 里层记录有三种露头方式：分隔行、正文只剩一个记录标题、消息类型写着「聊天记录」
+  const title = NESTED_TITLE.exec(body)?.[1]
+  const kind = join('消息类型').includes('聊天记录') ? '聊天记录' : ''
+  const content = block.nested || title || kind
+    ? nestedToken(title || kind, block.nested)
+    : body
   if (!content) return null
 
   const sender = join('发送者').replace(/\s+/g, ' ').trim().slice(0, FORWARD_NAME_LIMIT)
@@ -191,7 +254,7 @@ function parseForwardEntry(lines: string[], images: boolean): ForwardEntry | nul
  * 再抄一遍就成了「张三：张三: [图片]」。
  */
 function normalizeSingleEntry(lines: string[], images: boolean): string {
-  return parseForwardEntry(lines, images)?.content ?? lines.join('\n')
+  return parseForwardEntry({ lines, nested: 0 }, images)?.content ?? lines.join('\n')
 }
 
 /**
@@ -207,14 +270,29 @@ export function normalizeForward(text: string | undefined | null, images = true)
   if (!FORWARD_MARKER.test(source)) return source
 
   const lines = source.split('\n')
-  const start = lines.findIndex((line) => FORWARD_HEADER.test(line) || FORWARD_SEPARATOR.test(line))
+  const start = lines.findIndex((line) => FORWARD_HEADER.test(line) || isSeparator(line))
   if (start < 0) return normalizeSingleEntry(lines, images)
 
-  const blocks: string[][] = []
-  for (const line of lines.slice(start + 1)) {
-    if (FORWARD_SEPARATOR.test(line)) blocks.push([])
-    else if (blocks.length) blocks[blocks.length - 1].push(line)
-    else if (FORWARD_FIELD.test(line)) blocks.push([line])
+  const rest = lines.slice(start + 1)
+  const { outer, inner } = pickSeparators(rest)
+  const blocks: ForwardBlock[] = []
+  for (const line of rest) {
+    if (outer.test(line)) {
+      blocks.push({ lines: [], nested: 0 })
+      continue
+    }
+    const last = blocks[blocks.length - 1]
+    const nested = inner?.exec(line)
+    if (nested && last) {
+      // 里层记录：只数一数有多少条，内容整段不收
+      last.nested = Math.max(last.nested, Number(nested[1]) || 1)
+      continue
+    }
+    if (last) {
+      if (!last.nested) last.lines.push(line)
+    } else if (FORWARD_FIELD.test(line)) {
+      blocks.push({ lines: [line], nested: 0 })
+    }
   }
   const entries = blocks
     .map((block) => parseForwardEntry(block, images))

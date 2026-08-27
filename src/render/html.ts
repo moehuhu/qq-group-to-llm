@@ -82,6 +82,13 @@ const FORWARD_MAX_ROWS = 8
 /** 一条转发记录的行首 `昵称: `。昵称不含冒号，长度与入库时的上限一致 */
 const FORWARD_SENDER = /^([^\s:：][^:：]{0,23})[:：][ \t]*(.*)$/
 
+/**
+ * 被折叠掉的里层记录：`[群聊的聊天记录 4 条]`。
+ * 转发是可以套娃的，里层的内容在入库时就没往下收（见 text.ts），
+ * 这里只把这个标题排成一枚标签，跟正文区分开。
+ */
+const FORWARD_NESTED = /^\[([^\]\n]*聊天记录)(?:[ \t]+(\d+)[ \t]*条)?\]$/
+
 /** 把压平后的卡片正文拆回逐条。缩进的行是上一条的续行，入库时就是这么排的 */
 function forwardEntries(block: string): { sender: string, content: string }[] {
   const entries: { sender: string, content: string }[] = []
@@ -109,9 +116,15 @@ function forwardCard(title: string, block: string): string {
 
   // 名字与正文直接铺进卡片这张两列网格，不套行容器——
   // 套了每行各自成格，名字列就按各行自己的宽度走，对不齐
-  const rows = entries.slice(0, FORWARD_MAX_ROWS).map((entry) =>
-    `<span class="msg-fwd-name">${escapeHtml(entry.sender || '匿名')}</span>` +
-    `<span class="msg-fwd-text">${renderInline(entry.content)}</span>`).join('')
+  const rows = entries.slice(0, FORWARD_MAX_ROWS).map((entry) => {
+    const nested = FORWARD_NESTED.exec(entry.content)
+    const text = nested
+      ? `<span class="msg-fwd-nested">${escapeHtml(nested[1])}` +
+        (nested[2] ? ` · ${nested[2]} 条` : '') + `</span>`
+      : renderInline(entry.content)
+    return `<span class="msg-fwd-name">${escapeHtml(entry.sender || '匿名')}</span>` +
+      `<span class="msg-fwd-text">${text}</span>`
+  }).join('')
   const rest = entries.length - FORWARD_MAX_ROWS
   return `<div class="msg-fwd">` +
     `<div class="msg-fwd-head">${escapeHtml(title)} · ${entries.length} 条</div>` +

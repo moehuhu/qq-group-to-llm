@@ -445,6 +445,17 @@ body {
   word-break: break-word;
 }
 .msg-fwd-more { padding-top: 2px; font-size: 12px; color: var(--muted); }
+/* 套娃转发折叠成的标题：排成一枚标签，一眼看出这行不是话，是又一份记录 */
+.msg-fwd-nested {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
 /* 卡片里的图只当缩略图：一条转发裹着七八张图，按气泡里的尺寸排下来能顶半页 */
 .msg-fwd .msg-media { margin: 2px 0; }
 .msg-fwd .msg-img { max-width: 180px; max-height: 84px; }
