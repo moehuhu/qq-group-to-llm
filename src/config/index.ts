@@ -7,20 +7,19 @@ import {
 } from '../render/theme'
 
 /**
- * 一个命名模型。id 供各任务按名选用，缺省的字段回落到全局默认值。
- * 端点为空时表示与全局 openaiEndpoint 相同，apiKey 为空时表示复用全局 key。
+ * 一个命名模型。id 供各任务按名选用，字段齐全，是模型配置的唯一来源。
  */
 export interface LLMModelConfig {
   /** 模型 id，任务配置里用这个名字引用它 */
   id: string
-  /** OpenAI 兼容 API 地址，留空继承全局 openaiEndpoint */
-  endpoint?: string
-  /** API Key，留空继承全局 openaiApiKey */
-  apiKey?: string
-  /** 模型名称，留空继承全局 openaiModel */
-  model?: string
-  /** 采样温度，留空继承全局 temperature */
-  temperature?: number
+  /** OpenAI 兼容 API 地址 */
+  endpoint: string
+  /** API Key */
+  apiKey: string
+  /** 模型名称 */
+  model: string
+  /** 采样温度 */
+  temperature: number
 }
 
 export interface Config {
@@ -37,22 +36,14 @@ export interface Config {
   /** 统计与展示所用的时区（IANA 名称），留空跟随系统 */
   timezone: string
 
-  /** OpenAI 兼容 API 地址 */
-  openaiEndpoint: string
-  /** API Key */
-  openaiApiKey: string
-  /** 模型名称 */
-  openaiModel: string
-  /** 采样温度 */
-  temperature: number
+  /** 命名模型列表，各任务从这里按 id 选用模型 */
+  llmModels: LLMModelConfig[]
   /** 同时在飞的模型请求数上限 */
   llmConcurrency: number
   /** 以流式方式接收模型响应 */
   llmStream: boolean
   /** 请求失败后的重试次数 */
   llmRetries: number
-  /** 命名模型列表，供各任务按名选用；空则只有全局默认模型 */
-  llmModels: LLMModelConfig[]
   /** 话题总结使用的模型 id */
   llmModelTopic: string
   /** 金句提取使用的模型 id */
@@ -140,10 +131,6 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('消息记录'),
 
   Schema.object({
-    openaiEndpoint: Schema.string().default('https://api.openai.com/v1').description('OpenAI 兼容 API 地址'),
-    openaiApiKey: Schema.string().role('secret').description('API Key（支持任意兼容 OpenAI 接口的厂商）'),
-    openaiModel: Schema.string().default('gpt-4o-mini').description('使用的模型名称'),
-    temperature: Schema.number().default(1).min(0).max(2).step(0.1).description('采样温度'),
     llmConcurrency: Schema.number().default(2).min(1).max(5).step(1)
       .description('同时进行的模型调用数上限，超出的排队等待。调大可能触发厂商的并发限制导致调用失败'),
     llmStream: Schema.boolean().default(true)
@@ -152,19 +139,19 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('请求失败后的重试次数。仅对超时、连接中断、限流和 5xx 生效，鉴权或参数错误不重试'),
     llmModels: Schema.array(Schema.object({
       id: Schema.string().required().description('模型 id，下面各任务的"模型"配置填的就是它'),
-      endpoint: Schema.string().description('OpenAI 兼容 API 地址，留空继承全局 openaiEndpoint'),
-      apiKey: Schema.string().role('secret').description('API Key，留空继承全局 openaiApiKey'),
-      model: Schema.string().description('模型名称，留空继承全局 openaiModel'),
-      temperature: Schema.number().min(0).max(2).step(0.1).description('采样温度，留空继承全局 temperature'),
+      endpoint: Schema.string().required().description('OpenAI 兼容 API 地址（支持任意兼容 OpenAI 接口的厂商）'),
+      apiKey: Schema.string().required().role('secret').description('API Key'),
+      model: Schema.string().required().description('模型名称'),
+      temperature: Schema.number().default(1).min(0).max(2).step(0.1).description('采样温度'),
     }).description('一个命名模型'))
-      .default([])
+      .required()
       .role('table')
-      .description('命名模型列表。想用不同模型（甚至不同厂商）生成不同类型的结果时，在这里定义若干模型，再在下方各任务的"模型"配置里分别指定。留空则所有任务都走全局接口'),
-    llmModelTopic: Schema.string().default('default').description('「话题总结」使用的模型 id，填"default"用全局接口'),
-    llmModelGoldenQuotes: Schema.string().default('default').description('「金句提取」使用的模型 id，填"default"用全局接口'),
-    llmModelHighlightDialogues: Schema.string().default('default').description('「高光对话」使用的模型 id，填"default"用全局接口'),
-    llmModelQuery: Schema.string().default('default').description('「群聊问答」使用的模型 id，填"default"用全局接口'),
-    llmModelUserPersona: Schema.string().default('default').description('「用户画像」使用的模型 id，填"default"用全局接口'),
+      .description('命名模型列表，模型配置的唯一来源。想用不同模型（甚至不同厂商）生成不同类型的结果时，在这里定义若干模型，再在下方各任务的"模型"配置里分别指定'),
+    llmModelTopic: Schema.string().default('default').description('「话题总结」使用的模型 id，留空或填错时回落到列表第一个'),
+    llmModelGoldenQuotes: Schema.string().default('default').description('「金句提取」使用的模型 id，留空或填错时回落到列表第一个'),
+    llmModelHighlightDialogues: Schema.string().default('default').description('「高光对话」使用的模型 id，留空或填错时回落到列表第一个'),
+    llmModelQuery: Schema.string().default('default').description('「群聊问答」使用的模型 id，留空或填错时回落到列表第一个'),
+    llmModelUserPersona: Schema.string().default('default').description('「用户画像」使用的模型 id，留空或填错时回落到列表第一个'),
   }).description('LLM 接口'),
 
   Schema.object({

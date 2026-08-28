@@ -1,23 +1,11 @@
 import { Context, Service } from 'koishi'
 import { load } from 'js-yaml'
-import type { Config } from '../config'
+import type { Config, LLMModelConfig } from '../config'
 import { logger } from '../logger'
 import type { AnalysisContext, GoldenQuote, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
 import {
   describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairYaml,
 } from './prompt'
-
-/** 解析后的模型配置，字段都已填满，request 直接用 */
-export interface ResolvedModel {
-  /** OpenAI 兼容 API 地址 */
-  endpoint: string
-  /** API Key */
-  apiKey: string
-  /** 模型名称 */
-  model: string
-  /** 采样温度 */
-  temperature: number
-}
 
 /** 插件提供的所有 LLM 任务 */
 export type LLMTaskId =
@@ -65,23 +53,22 @@ export class LLMService extends Service {
   }
 
   /**
-   * 按任务解析出完整的模型配置。
-   * 先从命名模型列表里按配置的 id 找，缺省的字段回落到全局默认值；
-   * id 找不到（或填 default）时整份回落到全局接口。
+   * 按任务解析出它使用的模型。
+   * 先从命名模型列表里按配置的 id 找；id 留空、填 default 或找不到时回落到列表第一个。
    */
-  private resolveModel(taskId: LLMTaskId): ResolvedModel {
+  private resolveModel(taskId: LLMTaskId): LLMModelConfig {
     const configField = TASK_MODEL_FIELD[taskId]
     const target = this.config[configField] as string
     const named = this.config.llmModels.find((item) => item.id === target)
-    if (target && target !== 'default' && !named) {
-      this.log.warn(`[${TASK_NAMES[taskId]}] 配置的模型 id「${target}」不在命名模型列表中，回落到全局默认模型`)
+    if (named) return named
+    const fallback = this.config.llmModels[0]
+    if (!fallback) {
+      throw new Error(`未配置任何命名模型，请先在插件配置的「LLM 接口 → 命名模型」中至少填一个。`)
     }
-    return {
-      endpoint: named?.endpoint?.trim() || this.config.openaiEndpoint,
-      apiKey: named?.apiKey || this.config.openaiApiKey,
-      model: named?.model?.trim() || this.config.openaiModel,
-      temperature: named?.temperature ?? this.config.temperature,
+    if (target && target !== 'default') {
+      this.log.warn(`[${TASK_NAMES[taskId]}] 配置的模型 id「${target}」不在命名模型列表中，回落到「${fallback.id}」`)
     }
+    return fallback
   }
 
   /** 取一个并发名额，名额满了就排队等 */
@@ -129,7 +116,7 @@ export class LLMService extends Service {
    * 重试在并发名额内进行，退避期间不释放名额——退避很短，
    * 放掉名额再抢回来反而可能被别的请求插队、越等越久。
    */
-  private async requestWithRetry(model: ResolvedModel, prompt: string, task: string): Promise<string> {
+  private async requestWithRetry(model: LLMModelConfig, prompt: string, task: string): Promise<string> {
     const total = Math.max(0, this.config.llmRetries)
     for (let attempt = 0; ; attempt++) {
       try {
@@ -144,9 +131,9 @@ export class LLMService extends Service {
     }
   }
 
-  private async request(model: ResolvedModel, prompt: string, task: string): Promise<string> {
+  private async request(model: LLMModelConfig, prompt: string, task: string): Promise<string> {
     if (!model.apiKey) {
-      throw new Error('未配置 API Key，请在插件配置中填写 openaiApiKey。')
+      throw new Error(`模型「${model.id}」未配置 API Key，请在插件配置的「LLM 接口 → 命名模型」中填写。`)
     }
 
     const url = `${model.endpoint.replace(/\/+$/, '')}/chat/completions`
