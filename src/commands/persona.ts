@@ -79,15 +79,17 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
         )
         // 图文混在一条消息里在 QQ 官方接口上容易出问题，缓存说明另发一条。
         // 图片渲染或发送失败都不回退为 markdown，而是直接提示。
+        // send 的返回值是消息 id，不要 return，否则会被命令当作文本再发一次。
         if (image) {
           try {
-            if (!note) return await session.send(image)
             await session.send(image)
           } catch (error) {
             log.warn('用户画像图片发送失败:', error)
             return `图片发送失败：${error instanceof Error ? error.message : String(error)}`
           }
-          return note
+          // 有缓存说明则作为另一条消息发出；两者都只 await 不 return
+          if (note) await session.send(note)
+          return
         }
         return '图片渲染失败，请稍后重试。'
       } catch (error) {

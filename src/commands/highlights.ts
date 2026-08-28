@@ -25,7 +25,8 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
     )
     if (!image) return '图片渲染失败，请稍后重试。'
     try {
-      return await session.send(image)
+      // send 的返回值是消息 id，直接返回会被命令当作文本再发一次，这里只 await 不 return
+      await session.send(image)
     } catch (error) {
       log.warn(`[高光对话] 图片发送失败:`, error)
       return `图片发送失败：${error instanceof Error ? error.message : String(error)}`
