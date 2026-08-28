@@ -7,6 +7,44 @@ import {
   describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairYaml,
 } from './prompt'
 
+/** 解析后的模型配置，字段都已填满，request 直接用 */
+export interface ResolvedModel {
+  /** OpenAI 兼容 API 地址 */
+  endpoint: string
+  /** API Key */
+  apiKey: string
+  /** 模型名称 */
+  model: string
+  /** 采样温度 */
+  temperature: number
+}
+
+/** 插件提供的所有 LLM 任务 */
+export type LLMTaskId =
+  | 'topic'
+  | 'goldenQuotes'
+  | 'highlightDialogues'
+  | 'query'
+  | 'userPersona'
+
+/** 任务 → 指定模型用的配置字段名 */
+const TASK_MODEL_FIELD: Record<LLMTaskId, keyof Config> = {
+  topic: 'llmModelTopic',
+  goldenQuotes: 'llmModelGoldenQuotes',
+  highlightDialogues: 'llmModelHighlightDialogues',
+  query: 'llmModelQuery',
+  userPersona: 'llmModelUserPersona',
+}
+
+/** 任务 → 日志里用的名字 */
+const TASK_NAMES: Record<LLMTaskId, string> = {
+  topic: '话题总结',
+  goldenQuotes: '金句提取',
+  highlightDialogues: '高光对话',
+  query: '群聊问答',
+  userPersona: '用户画像',
+}
+
 export class LLMService extends Service {
   static inject = ['http']
 
@@ -24,6 +62,26 @@ export class LLMService extends Service {
 
   private get limit(): number {
     return Math.max(1, this.config.llmConcurrency)
+  }
+
+  /**
+   * 按任务解析出完整的模型配置。
+   * 先从命名模型列表里按配置的 id 找，缺省的字段回落到全局默认值；
+   * id 找不到（或填 default）时整份回落到全局接口。
+   */
+  private resolveModel(taskId: LLMTaskId): ResolvedModel {
+    const configField = TASK_MODEL_FIELD[taskId]
+    const target = this.config[configField] as string
+    const named = this.config.llmModels.find((item) => item.id === target)
+    if (target && target !== 'default' && !named) {
+      this.log.warn(`[${TASK_NAMES[taskId]}] 配置的模型 id「${target}」不在命名模型列表中，回落到全局默认模型`)
+    }
+    return {
+      endpoint: named?.endpoint?.trim() || this.config.openaiEndpoint,
+      apiKey: named?.apiKey || this.config.openaiApiKey,
+      model: named?.model?.trim() || this.config.openaiModel,
+      temperature: named?.temperature ?? this.config.temperature,
+    }
   }
 
   /** 取一个并发名额，名额满了就排队等 */
@@ -59,8 +117,10 @@ export class LLMService extends Service {
   }
 
   /** 调用 OpenAI 兼容接口，返回原始文本。经并发闸门限流，失败按需重试 */
-  private chat(prompt: string, task: string): Promise<string> {
-    return this.enqueue(() => this.requestWithRetry(prompt, task), task)
+  private chat(taskId: LLMTaskId, prompt: string): Promise<string> {
+    const task = TASK_NAMES[taskId]
+    const model = this.resolveModel(taskId)
+    return this.enqueue(() => this.requestWithRetry(model, prompt, task), task)
   }
 
   /**
@@ -69,11 +129,11 @@ export class LLMService extends Service {
    * 重试在并发名额内进行，退避期间不释放名额——退避很短，
    * 放掉名额再抢回来反而可能被别的请求插队、越等越久。
    */
-  private async requestWithRetry(prompt: string, task: string): Promise<string> {
+  private async requestWithRetry(model: ResolvedModel, prompt: string, task: string): Promise<string> {
     const total = Math.max(0, this.config.llmRetries)
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.request(prompt, task)
+        return await this.request(model, prompt, task)
       } catch (error) {
         if (attempt >= total || !isRetryable(error)) throw error
         const delay = 1000 * 2 ** attempt
@@ -84,26 +144,26 @@ export class LLMService extends Service {
     }
   }
 
-  private async request(prompt: string, task: string): Promise<string> {
-    if (!this.config.openaiApiKey) {
+  private async request(model: ResolvedModel, prompt: string, task: string): Promise<string> {
+    if (!model.apiKey) {
       throw new Error('未配置 API Key，请在插件配置中填写 openaiApiKey。')
     }
 
-    const url = `${this.config.openaiEndpoint.replace(/\/+$/, '')}/chat/completions`
+    const url = `${model.endpoint.replace(/\/+$/, '')}/chat/completions`
     const leftovers = findLeftovers(prompt)
     if (leftovers.length) {
       this.log.warn(`[${task}] 提示词存在未替换的占位符: ${leftovers.join(' ')}`)
     }
 
     const stream = this.config.llmStream
-    this.log.info(`[${task}] 请求 ${this.config.openaiModel}，提示词 ${prompt.length} 字，` +
-      `temperature=${this.config.temperature}，${stream ? '流式' : '非流式'}`)
+    this.log.info(`[${task}] 请求 ${model.model} @ ${model.endpoint}，提示词 ${prompt.length} 字，` +
+      `temperature=${model.temperature}，${stream ? '流式' : '非流式'}`)
     this.log.debug(`[${task}] 完整提示词:\n${prompt}`)
 
     const payload: Record<string, unknown> = {
-      model: this.config.openaiModel,
+      model: model.model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: this.config.temperature,
+      temperature: model.temperature,
     }
     if (stream) {
       payload.stream = true
@@ -111,7 +171,7 @@ export class LLMService extends Service {
       payload.stream_options = { include_usage: true }
     }
     const headers = {
-      Authorization: `Bearer ${this.config.openaiApiKey}`,
+      Authorization: `Bearer ${model.apiKey}`,
       'Content-Type': 'application/json',
     }
 
@@ -237,8 +297,9 @@ export class LLMService extends Service {
   }
 
   /** 调用并解析 markdown 代码块中的 YAML */
-  private async chatYaml<T>(prompt: string, task: string): Promise<T[]> {
-    const raw = await this.chat(prompt, task)
+  private async chatYaml<T>(taskId: LLMTaskId, prompt: string): Promise<T[]> {
+    const task = TASK_NAMES[taskId]
+    const raw = await this.chat(taskId, prompt)
     const yaml = extractYaml(raw)
     if (yaml === null) {
       this.log.warn(`[${task}] 未返回 YAML 代码块，完整响应:\n${raw}`)
@@ -277,20 +338,20 @@ export class LLMService extends Service {
   }
 
   async summarizeTopics(messages: string, context: AnalysisContext): Promise<SummaryTopic[]> {
-    return this.chatYaml<SummaryTopic>(fill(this.config.promptTopic, {
+    return this.chatYaml<SummaryTopic>('topic', fill(this.config.promptTopic, {
       ...context,
       messages,
       maxTopics: String(this.config.maxTopics),
-    }), '话题总结')
+    }))
   }
 
   /** 挑选单句成立的金句。kind 由调用方规整时补上，不要求模型返回 */
   async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<Omit<GoldenQuote, 'kind'>[]> {
-    return this.chatYaml<Omit<GoldenQuote, 'kind'>>(fill(this.config.promptGoldenQuotes, {
+    return this.chatYaml<Omit<GoldenQuote, 'kind'>>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
       ...context,
       messages,
       maxGoldenQuotes: String(this.config.maxGoldenQuotes),
-    }), '金句提取')
+    }))
   }
 
   /** 截取带学术要素的冷幽默对话片段，模型认为没有符合条件的片段时返回空数组 */
@@ -298,12 +359,12 @@ export class LLMService extends Service {
     messages: string,
     context: AnalysisContext,
   ): Promise<Omit<HighlightDialogue, 'kind'>[]> {
-    return this.chatYaml<Omit<HighlightDialogue, 'kind'>>(fill(this.config.promptHighlightDialogues, {
+    return this.chatYaml<Omit<HighlightDialogue, 'kind'>>('highlightDialogues', fill(this.config.promptHighlightDialogues, {
       ...context,
       messages,
       maxHighlightDialogues: String(this.config.maxHighlightDialogues),
       maxHighlightLines: String(this.config.maxHighlightLines),
-    }), '高光对话')
+    }))
   }
 
   /**
@@ -315,12 +376,12 @@ export class LLMService extends Service {
     username: string
     messages: string
   }): Promise<UserPersonaProfile | null> {
-    const profiles = await this.chatYaml<UserPersonaProfile>(fill(this.config.promptUserPersona, {
+    const profiles = await this.chatYaml<UserPersonaProfile>('userPersona', fill(this.config.promptUserPersona, {
       messages: input.messages,
       userId: input.userId,
       username: input.username,
       lookbackDays: String(this.config.personaLookbackDays),
-    }), '用户画像')
+    }))
 
     const profile = profiles[0]
     if (!profile?.summary) {
@@ -332,7 +393,7 @@ export class LLMService extends Service {
 
   /** 自然语言问答，返回纯文本 */
   async answerQuery(messages: string, context: AnalysisContext): Promise<string> {
-    return this.chat(fill(this.config.promptQuery, { ...context, messages }), '群聊问答')
+    return this.chat('query', fill(this.config.promptQuery, { ...context, messages }))
   }
 }
 

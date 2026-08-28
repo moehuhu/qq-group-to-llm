@@ -6,6 +6,23 @@ import {
   REPORT_STYLE, REPORT_TEMPLATE,
 } from '../render/theme'
 
+/**
+ * 一个命名模型。id 供各任务按名选用，缺省的字段回落到全局默认值。
+ * 端点为空时表示与全局 openaiEndpoint 相同，apiKey 为空时表示复用全局 key。
+ */
+export interface LLMModelConfig {
+  /** 模型 id，任务配置里用这个名字引用它 */
+  id: string
+  /** OpenAI 兼容 API 地址，留空继承全局 openaiEndpoint */
+  endpoint?: string
+  /** API Key，留空继承全局 openaiApiKey */
+  apiKey?: string
+  /** 模型名称，留空继承全局 openaiModel */
+  model?: string
+  /** 采样温度，留空继承全局 temperature */
+  temperature?: number
+}
+
 export interface Config {
   /** 监听所有群组（true 时忽略 groups 配置） */
   listenAll: boolean
@@ -34,6 +51,18 @@ export interface Config {
   llmStream: boolean
   /** 请求失败后的重试次数 */
   llmRetries: number
+  /** 命名模型列表，供各任务按名选用；空则只有全局默认模型 */
+  llmModels: LLMModelConfig[]
+  /** 话题总结使用的模型 id */
+  llmModelTopic: string
+  /** 金句提取使用的模型 id */
+  llmModelGoldenQuotes: string
+  /** 高光对话使用的模型 id */
+  llmModelHighlightDialogues: string
+  /** 群聊问答使用的模型 id */
+  llmModelQuery: string
+  /** 用户画像使用的模型 id */
+  llmModelUserPersona: string
 
   /** 默认分析天数 */
   analysisDays: number
@@ -121,6 +150,21 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('以流式方式接收响应。关闭后服务端要等整段生成完才回响应头，提示词一长就容易超时失败（UND_ERR_HEADERS_TIMEOUT）'),
     llmRetries: Schema.number().default(2).min(0).max(5).step(1)
       .description('请求失败后的重试次数。仅对超时、连接中断、限流和 5xx 生效，鉴权或参数错误不重试'),
+    llmModels: Schema.array(Schema.object({
+      id: Schema.string().required().description('模型 id，下面各任务的"模型"配置填的就是它'),
+      endpoint: Schema.string().description('OpenAI 兼容 API 地址，留空继承全局 openaiEndpoint'),
+      apiKey: Schema.string().role('secret').description('API Key，留空继承全局 openaiApiKey'),
+      model: Schema.string().description('模型名称，留空继承全局 openaiModel'),
+      temperature: Schema.number().min(0).max(2).step(0.1).description('采样温度，留空继承全局 temperature'),
+    }).description('一个命名模型'))
+      .default([])
+      .role('table')
+      .description('命名模型列表。想用不同模型（甚至不同厂商）生成不同类型的结果时，在这里定义若干模型，再在下方各任务的"模型"配置里分别指定。留空则所有任务都走全局接口'),
+    llmModelTopic: Schema.string().default('default').description('「话题总结」使用的模型 id，填"default"用全局接口'),
+    llmModelGoldenQuotes: Schema.string().default('default').description('「金句提取」使用的模型 id，填"default"用全局接口'),
+    llmModelHighlightDialogues: Schema.string().default('default').description('「高光对话」使用的模型 id，填"default"用全局接口'),
+    llmModelQuery: Schema.string().default('default').description('「群聊问答」使用的模型 id，填"default"用全局接口'),
+    llmModelUserPersona: Schema.string().default('default').description('「用户画像」使用的模型 id，填"default"用全局接口'),
   }).description('LLM 接口'),
 
   Schema.object({

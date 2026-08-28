@@ -19,7 +19,7 @@
 ## 快速开始
 
 1. 装好数据库插件（任意 Koishi 支持的驱动）；`database` 与 `http` 是必需服务，`puppeteer` 可选，用于出图。
-2. 在「LLM 接口」一节填 `openaiEndpoint` / `openaiApiKey` / `openaiModel`——任何兼容 OpenAI `/chat/completions` 的厂商都行。
+2. 在「LLM 接口」一节填 `openaiEndpoint` / `openaiApiKey` / `openaiModel`——任何兼容 OpenAI `/chat/completions` 的厂商都行。想让不同任务用不同模型，再加 `llmModels` 命名模型列表并在各任务里指定，见「LLM 接入」。
 3. 默认 `listenAll` 开着，插件会记录所有群的消息。攒够 `minMessages`（默认 20）条之后，在群里发 `群分析`。
 
 没配 API Key 时插件照常记录消息，只是分析类命令用不了，启动日志里会点出来。
@@ -141,6 +141,28 @@
 ## LLM 接入
 
 走 OpenAI 兼容的 `/chat/completions` 接口。结构化结果要求模型返回 markdown 代码块里的 YAML；五段提示词模板（话题 / 金句 / 高光对话 / 问答 / 用户画像）都能在配置的「提示词」一节改写，占位符见各项描述。
+
+**默认只有一个模型**：`openaiEndpoint` / `openaiApiKey` / `openaiModel` / `temperature` 四项全局配置，所有任务共用，老配置升级后无需改动。
+
+**想用不同模型生成不同类型的结果**：在「LLM 接口」一节的 `llmModels` 命名模型列表里定义若干模型（每条可填自己的端点、key、模型名与温度，缺省的字段回落到全局配置），再把「话题总结 / 金句提取 / 高光对话 / 群聊问答 / 用户画像」各自的「模型」填成对应的模型 id 即可。模型 id 填 `default`（或留空）就是全局模型；填了不存在的 id 会自动回落到全局模型并打一条警告。比如让金句和画像用贵一点的大模型、话题与问答用便宜快的小模型：
+
+```yaml
+llmModels:
+  - id: cheap
+    model: gpt-4o-mini
+  - id: fancy
+    endpoint: https://other-vendor.example/v1
+    apiKey: sk-xxxx
+    model: some-big-model
+    temperature: 0.7
+llmModelTopic: cheap
+llmModelQuery: cheap
+llmModelGoldenQuotes: fancy
+llmModelUserPersona: fancy
+llmModelHighlightDialogues: cheap
+```
+
+多个命名模型共用同一道并发闸门，配额按请求数算，不看模型或厂商。
 
 **默认走流式**（`llmStream`）。非流式时服务端要等整段生成完才发响应头，提示词一长就会撞上 undici 那 5 分钟的 `headersTimeout`，抛一个 `UND_ERR_HEADERS_TIMEOUT` 就没了——注意 Koishi 的 `timeout` 配置走的是 AbortController，管不到这个底层超时。流式下响应头秒回，只要分片不断就不会再触发超时。个别厂商不支持流式时可以关掉。
 
@@ -356,6 +378,12 @@ puppeteer 是**可选**依赖。没装、没启用、或者渲染过程中出了
 | `llmConcurrency` | `2` | 同时在飞的请求数上限，1–5 |
 | `llmStream` | `true` | 流式接收响应 |
 | `llmRetries` | `2` | 重试次数，0–5 |
+| `llmModels` | `[]` | 命名模型列表，见「LLM 接入」 |
+| `llmModelTopic` | `default` | 「话题总结」用的模型 id |
+| `llmModelGoldenQuotes` | `default` | 「金句提取」用的模型 id |
+| `llmModelHighlightDialogues` | `default` | 「高光对话」用的模型 id |
+| `llmModelQuery` | `default` | 「群聊问答」用的模型 id |
+| `llmModelUserPersona` | `default` | 「用户画像」用的模型 id |
 
 ### 分析设置
 

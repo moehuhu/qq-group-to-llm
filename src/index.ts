@@ -29,9 +29,18 @@ export const inject = {
 
 export function apply(ctx: Context, config: Config) {
   const log = logger(ctx)
-  log.info(`插件启动 | 模型 ${config.openaiModel} @ ${config.openaiEndpoint}` +
+  log.info(`插件启动 | 全局模型 ${config.openaiModel} @ ${config.openaiEndpoint}` +
     `，并发上限 ${config.llmConcurrency}，${config.llmStream ? '流式' : '非流式'}，重试 ${config.llmRetries} 次` +
     `${config.openaiApiKey ? '' : '（未配置 API Key，分析类命令不可用）'}`)
+  if (config.llmModels.length) {
+    log.info(`命名模型 | ${config.llmModels.map((item) => {
+      const model = item.model || config.openaiModel
+      const endpoint = item.endpoint || config.openaiEndpoint
+      return `${item.id}（${model} @ ${endpoint}）`
+    }).join('、')}`)
+    log.info(`任务分工 | 话题=${config.llmModelTopic} 金句=${config.llmModelGoldenQuotes} ` +
+      `高光=${config.llmModelHighlightDialogues} 问答=${config.llmModelQuery} 画像=${config.llmModelUserPersona}`)
+  }
   log.info(`时区 | ${config.timezone || '跟随系统'}（当前 ${
     createTimeFormatter(config.timezone).dateTime(new Date())}）`)
   log.info(`结果出口 | ${config.renderImage
