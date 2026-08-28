@@ -2,7 +2,7 @@ import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
-import { analyzeGroup, answerQuery, fetchMessages, renderReport } from '../analysis'
+import { analyzeGroup, answerQuery, fetchMessages } from '../analysis'
 import { resolveTarget } from './target'
 import { renderHtmlToImage, renderReportHtml } from '../render'
 import type { GroupAnalysisResult } from '../types'
@@ -18,13 +18,12 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
   const log = logger(ctx)
   const cache = new Map<string, CacheEntry>()
 
-  /** 优先出图，puppeteer 不可用、渲染失败或发送被拒时回退为 markdown 文本 */
+  /** 优先出图，puppeteer 不可用、渲染失败或发送被拒时都不回退为 markdown，而是直接提示 */
   const send = async (session: Session, result: GroupAnalysisResult) => {
     const image = await renderHtmlToImage(
       ctx, config, renderReportHtml(result, config), '群分析',
     )
-    // 发图失败（如 QQ 富媒体上传超时）时把错误提示发出去，不重发文本
-    if (!image) return toMarkdownMessage(renderReport(result))
+    if (!image) return '图片渲染失败，请稍后重试。'
     try {
       return await session.send(image)
     } catch (error) {

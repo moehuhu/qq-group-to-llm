@@ -1,8 +1,7 @@
 import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
-import { toMarkdownMessage } from '../markdown'
-import { renderPersona, resolveEvidence, resolvePersona } from '../analysis'
+import { resolveEvidence, resolvePersona } from '../analysis'
 import { renderHtmlToImage, renderPersonaHtml } from '../render'
 
 /**
@@ -79,7 +78,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
           '用户画像',
         )
         // 图文混在一条消息里在 QQ 官方接口上容易出问题，缓存说明另发一条。
-        // 图片发送失败（如 QQ 富媒体上传超时）时把错误提示发出去，不重发文本。
+        // 图片渲染或发送失败都不回退为 markdown，而是直接提示。
         if (image) {
           try {
             if (!note) return await session.send(image)
@@ -90,13 +89,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
           }
           return note
         }
-
-        // 头像以 markdown 图片语法嵌入内容开头，避免图片元素与 markdown 混发导致文本退化为纯文本
-        const avatarMarkdown = outcome.avatar
-          ? `![头像](${outcome.avatar})\n\n`
-          : ''
-        const report = renderPersona(persona, evidence)
-        return toMarkdownMessage(avatarMarkdown + report + (note ? `\n\n${note}` : ''))
+        return '图片渲染失败，请稍后重试。'
       } catch (error) {
         log.error('用户画像生成失败:', error)
         return `用户画像生成失败：${error instanceof Error ? error.message : String(error)}`

@@ -2,7 +2,7 @@ import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
-import { analyzeDialogues, fetchMessages, renderDialogues } from '../analysis'
+import { analyzeDialogues, fetchMessages } from '../analysis'
 import { resolveTarget } from './target'
 import { renderDialoguesHtml, renderHtmlToImage } from '../render'
 import type { DialogueDigest } from '../types'
@@ -18,13 +18,12 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
   const log = logger(ctx)
   const cache = new Map<string, CacheEntry>()
 
-  /** 优先出图，puppeteer 不可用、渲染失败或发送被拒时回退为 markdown 文本 */
+  /** 优先出图，puppeteer 不可用、渲染失败或发送被拒时都不回退为 markdown，而是直接提示 */
   const send = async (session: Session, digest: DialogueDigest) => {
     const image = await renderHtmlToImage(
       ctx, config, renderDialoguesHtml(digest, config), '高光对话',
     )
-    // 发图失败（如 QQ 富媒体上传超时）时把错误提示发出去，不重发文本
-    if (!image) return toMarkdownMessage(renderDialogues(digest))
+    if (!image) return '图片渲染失败，请稍后重试。'
     try {
       return await session.send(image)
     } catch (error) {
