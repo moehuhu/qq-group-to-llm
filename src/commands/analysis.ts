@@ -1,4 +1,4 @@
-import { Context } from 'koishi'
+import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
@@ -18,12 +18,19 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
   const log = logger(ctx)
   const cache = new Map<string, CacheEntry>()
 
-  /** 优先出图，puppeteer 不可用或渲染失败时回退为 markdown 文本 */
-  const send = async (result: GroupAnalysisResult) => {
+  /** 优先出图，puppeteer 不可用、渲染失败或发送被拒时回退为 markdown 文本 */
+  const send = async (session: Session, result: GroupAnalysisResult) => {
     const image = await renderHtmlToImage(
       ctx, config, renderReportHtml(result, config), '群分析',
     )
-    return image ?? toMarkdownMessage(renderReport(result))
+    // 发图失败（如 QQ 富媒体上传超时）时把错误提示发出去，不重发文本
+    if (!image) return toMarkdownMessage(renderReport(result))
+    try {
+      return await session.send(image)
+    } catch (error) {
+      log.warn(`[群分析] 图片发送失败:`, error)
+      return `图片发送失败：${error instanceof Error ? error.message : String(error)}`
+    }
   }
 
   ctx.command('群分析 [query:text]', '用 LLM 分析本群近期的聊天记录')
@@ -49,11 +56,11 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
         `模式=${question ? `问答「${question}」` : '报告'}${options.force ? '，强制刷新' : ''}`)
 
       const cacheKey = `${channelId}:${days}`
-      if (!question && !options.force && config.cacheMinutes > 0) {
+        if (!question && !options.force && config.cacheMinutes > 0) {
         const cached = cache.get(cacheKey)
         if (cached && cached.expireAt > Date.now()) {
           log.info(`命中群分析缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
-          return send(cached.result)
+          return send(session, cached.result)
         }
       }
 
@@ -75,7 +82,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
           cache.set(cacheKey, { result, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
           log.debug(`群分析结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
         }
-        return send(result)
+        return send(session, result)
       } catch (error) {
         log.error('群分析执行失败:', error)
         return `群分析失败：${error instanceof Error ? error.message : String(error)}`

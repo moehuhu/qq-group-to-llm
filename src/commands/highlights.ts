@@ -1,4 +1,4 @@
-import { Context } from 'koishi'
+import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
@@ -18,12 +18,19 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
   const log = logger(ctx)
   const cache = new Map<string, CacheEntry>()
 
-  /** 优先出图，puppeteer 不可用或渲染失败时回退为 markdown 文本 */
-  const send = async (digest: DialogueDigest) => {
+  /** 优先出图，puppeteer 不可用、渲染失败或发送被拒时回退为 markdown 文本 */
+  const send = async (session: Session, digest: DialogueDigest) => {
     const image = await renderHtmlToImage(
       ctx, config, renderDialoguesHtml(digest, config), '高光对话',
     )
-    return image ?? toMarkdownMessage(renderDialogues(digest))
+    // 发图失败（如 QQ 富媒体上传超时）时把错误提示发出去，不重发文本
+    if (!image) return toMarkdownMessage(renderDialogues(digest))
+    try {
+      return await session.send(image)
+    } catch (error) {
+      log.warn(`[高光对话] 图片发送失败:`, error)
+      return `图片发送失败：${error instanceof Error ? error.message : String(error)}`
+    }
   }
 
   ctx.command('高光对话 [count:number]', '截取带学术要素的冷幽默群聊对话')
@@ -53,7 +60,7 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
         const cached = cache.get(cacheKey)
         if (cached && cached.expireAt > Date.now()) {
           log.info(`命中高光对话缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
-          return send(cached.digest)
+          return send(session, cached.digest)
         }
       }
 
@@ -81,7 +88,7 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
           cache.set(cacheKey, { digest, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
           log.debug(`高光对话结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
         }
-        return send(digest)
+        return send(session, digest)
       } catch (error) {
         log.error('高光对话抽取失败:', error)
         return `高光对话抽取失败：${error instanceof Error ? error.message : String(error)}`

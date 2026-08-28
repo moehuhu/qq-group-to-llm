@@ -61,11 +61,12 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
           channelId: session.channelId,
         }, options.force ?? false)
 
-        if (!outcome.persona) {
+        const persona = outcome.persona
+        if (!persona) {
           return outcome.reason ? `无法生成画像：${outcome.reason}。` : '无法生成画像。'
         }
 
-        const evidence = await resolveEvidence(ctx, config, outcome.persona)
+        const evidence = await resolveEvidence(ctx, config, persona)
         const note = outcome.cached
           ? outcome.reason
             ? `（${outcome.reason}，展示的是此前的画像）`
@@ -74,13 +75,19 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
 
         const image = await renderHtmlToImage(
           ctx, config,
-          renderPersonaHtml(outcome.persona, evidence, outcome.avatar, config),
+          renderPersonaHtml(persona, evidence, outcome.avatar, config),
           '用户画像',
         )
-        // 图文混在一条消息里在 QQ 官方接口上容易出问题，缓存说明另发一条
+        // 图文混在一条消息里在 QQ 官方接口上容易出问题，缓存说明另发一条。
+        // 图片发送失败（如 QQ 富媒体上传超时）时把错误提示发出去，不重发文本。
         if (image) {
-          if (!note) return image
-          await session.send(image)
+          try {
+            if (!note) return await session.send(image)
+            await session.send(image)
+          } catch (error) {
+            log.warn('用户画像图片发送失败:', error)
+            return `图片发送失败：${error instanceof Error ? error.message : String(error)}`
+          }
           return note
         }
 
@@ -88,7 +95,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
         const avatarMarkdown = outcome.avatar
           ? `![头像](${outcome.avatar})\n\n`
           : ''
-        const report = renderPersona(outcome.persona, evidence)
+        const report = renderPersona(persona, evidence)
         return toMarkdownMessage(avatarMarkdown + report + (note ? `\n\n${note}` : ''))
       } catch (error) {
         log.error('用户画像生成失败:', error)
