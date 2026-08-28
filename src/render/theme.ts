@@ -37,7 +37,19 @@ const EMOJI_FONTS = [
 
 const FONT_STACK = [...TEXT_FONTS, ...EMOJI_FONTS, 'sans-serif'].join(', ')
 
-export const STYLE = `
+/**
+ * ── 样式表 ────────────────────────────────────────────────
+ *
+ * 与页面模板一一对应，三个出口各一份，分别维护：给群分析换个配色，
+ * 不会顺手把画像那张图也改了。
+ *
+ * 三份都是完整的样式表，共用的段落（重置、配色变量、分节、消息正文等）
+ * 在下面各自拼进去——配置里拿到的是一整份能直接改的 CSS，
+ * 而不是几个要自己拼的碎片。
+ */
+
+/** 重置、字体栈与配色变量。改配色只要动 `#card` 上这组变量 */
+const RESET = `
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
@@ -70,7 +82,10 @@ body {
   /* 群昵称和消息里常有超长不可断的串，统一允许断行，否则会顶破卡片右边界 */
   word-break: break-word;
 }
+`
 
+/** 顶部渐变条，三张图都有 */
+const BANNER = `
 /* 顶部渐变条：整张图的视觉锚点 */
 .banner {
   position: relative;
@@ -104,66 +119,11 @@ body {
   color: rgba(255, 255, 255, .88);
   word-break: break-all;
 }
+`
 
-/* 统计磁贴 */
-.stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px;
-  background: var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.stat {
-  flex: 1 1 0;
-  min-width: 96px;
-  padding: 16px 10px 15px;
-  background: var(--surface-2);
-  text-align: center;
-}
-.stat-value {
-  font-size: 21px;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  word-break: break-all;
-}
-.stat-label { margin-top: 3px; font-size: 11.5px; color: var(--muted); letter-spacing: .3px; }
-
+/** 正文容器与分节标题 */
+const SECTION = `
 .body { padding: 8px 34px 30px; }
-
-/*
- * 两列排版走多列流：浏览器自己平衡两列高度。
- * 按分节硬分左右会失衡——高光对话的篇幅经常顶得上其余两节之和，
- * 那样左列会空掉一大半。
- */
-.columns {
-  column-count: 2;
-  column-gap: 26px;
-}
-/*
- * 板块内部的分栏。板块本身始终通栏，列数由各板块自己决定：
- * 话题与活跃榜两列，金句多列（短，排得下），高光对话单列（气泡需要宽度）。
- *
- * 用 grid 而不是 column-count：多列流是按列灌的，4 张卡片分 3 列会被
- * 平衡成 2+2+0，白白空出一列；grid 按行铺，永远不会留空列。
- * 纵向间距仍由卡片自己的 margin 负责，这里只管列间距。
- */
-.group {
-  display: grid;
-  grid-template-columns: 1fr;
-  column-gap: 22px;
-  align-items: start;
-}
-.group.cols-2 { grid-template-columns: repeat(2, 1fr); }
-.group.cols-3 { grid-template-columns: repeat(3, 1fr); }
-
-/* 卡片是最小不可分单位，标题不能和它后面的内容被拆到两列 */
-.topic, .dialogue, .quote, .rank, .evidence, .field, .summary { break-inside: avoid; }
-.section-title, .subsection-title { break-after: avoid; }
-/* 分节默认允许跨列续排，否则又退化成按节分栏；标了 keep 的整块搬走 */
-.section { break-inside: auto; }
-.section.keep { break-inside: avoid; }
 
 .section { padding-top: 24px; }
 .section-title {
@@ -181,28 +141,30 @@ body {
   height: 1px;
   background: linear-gradient(90deg, var(--line), transparent);
 }
-.subsection-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 4px 0 12px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: .4px;
-}
+`
 
-/* 话题卡片 */
-.topic {
-  position: relative;
-  padding: 14px 16px 14px 18px;
-  margin-bottom: 10px;
-  background: var(--surface-2);
-  border-radius: 12px;
-  border-left: 3px solid var(--accent);
+/** 板块内部的分栏网格。群分析与高光对话用，画像走的是页面级多列 */
+const GROUP = `
+/*
+ * 板块内部的分栏。板块本身始终通栏，列数由各板块自己决定：
+ * 话题与活跃榜两列，金句多列（短，排得下），高光对话单列（气泡需要宽度）。
+ *
+ * 用 grid 而不是 column-count：多列流是按列灌的，4 张卡片分 3 列会被
+ * 平衡成 2+2+0，白白空出一列；grid 按行铺，永远不会留空列。
+ * 纵向间距仍由卡片自己的 margin 负责，这里只管列间距。
+ */
+.group {
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: 22px;
+  align-items: start;
 }
-.topic-name { font-size: 15.5px; font-weight: 650; color: var(--ink); }
-.topic-detail { margin-top: 6px; font-size: 14px; color: var(--ink-soft); white-space: pre-wrap; }
+.group.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.group.cols-3 { grid-template-columns: repeat(3, 1fr); }
+`
+
+/** 标签云。群分析的话题贡献者、画像的特质与领域都用它 */
+const CHIPS = `
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .chip {
   padding: 2px 10px;
@@ -212,214 +174,13 @@ body {
   background: #eef1ff;
   border-radius: 999px;
 }
+`
 
-/*
- * 高光对话。这张图只有一件事要做——把对话读顺，所以字号整体比其余版面大一档：
- * 气泡正文 21px 是主角，标题 23px 压住它，发言人名与脚注退到 16/17px 当配角，
- * 头像也从 64px 收到 54px。原先气泡 24px、周围仍是十几 px，主次差得太狠，
- * 名字和脚注都像被踩扁了。
+/**
+ * 消息正文：引用、合并转发、图片、视频、提及，外加头像图层。
+ * 三张图都会渲染群消息（金句、气泡、代表发言），所以三份里都有。
  */
-.dialogue {
-  padding: 20px 20px 18px;
-  margin-bottom: 16px;
-  background: var(--surface-2);
-  border-radius: 16px;
-  border: 1px solid var(--line);
-}
-.dialogue-title {
-  font-size: 23px;
-  font-weight: 650;
-  line-height: 1.45;
-  color: var(--ink);
-  padding-bottom: 14px;
-  margin-bottom: 14px;
-  border-bottom: 1px dashed #dfe4f0;
-}
-/*
- * 头像顶对齐。原先是底对齐，一条带图或带转发卡片的发言能有两三百像素高，
- * 头像被推到最底下，和顶上的名字隔了大半个气泡，谁说的就对不上号了。
- */
-.turn { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
-.avatar {
-  position: relative;
-  flex: 0 0 auto;
-  width: 54px; height: 54px;
-  /* 名字那行占掉的高度（16 × 1.5 + 5px 下边距），让头像跟气泡第一行齐平而不是跟名字齐平 */
-  margin-top: 29px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 54px;
-  text-align: center;
-  overflow: hidden;
-}
-/* 留一成的余地给对侧的头像与呼吸空间，其余尽量让给正文 */
-.bubble-wrap { max-width: 88%; }
-.speaker { font-size: 16px; line-height: 1.5; color: var(--muted); padding: 0 4px 5px; }
-.bubble {
-  display: inline-block;
-  position: relative;
-  padding: 13px 20px;
-  font-size: 21px;
-  line-height: 1.75;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  /* 缺口开在左上角，对着头像——头像已经挪到顶上了 */
-  border-radius: 5px 18px 18px 18px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* 对话脚注：学术要素与笑点说明 */
-.note { display: flex; gap: 10px; margin-top: 16px; font-size: 17px; line-height: 1.7; color: var(--ink-soft); }
-.note-tag {
-  flex: 0 0 auto;
-  padding: 3px 11px;
-  font-size: 14px;
-  line-height: 1.55;
-  font-weight: 600;
-  border-radius: 7px;
-}
-.note-tag.edu  { color: #b06a12; background: #fdf1de; }
-.note-tag.cold { color: #17867a; background: #ddf5f2; }
-
-/*
- * 气泡里的消息元素跟着气泡一起放大。这些 msg-* 类同时用在群分析的金句和画像的
- * 证据里——那两处正文只有十四五 px，全局改会把它们顶破，所以一律限定在 .bubble 内。
- * 引用条、转发卡片、图注都按气泡正文的八成上下取值，主次不乱。
- */
-.bubble .msg-quote { margin-bottom: 8px; padding: 6px 12px; font-size: 17px; border-radius: 0 9px 9px 0; }
-.bubble .msg-fwd {
-  margin: 7px 0;
-  padding: 11px 15px 10px;
-  column-gap: 10px;
-  row-gap: 4px;
-  font-size: 17px;
-  border-radius: 12px;
-}
-.bubble .msg-fwd-head { padding-bottom: 7px; margin-bottom: 4px; font-size: 15px; }
-.bubble .msg-fwd-more,
-.bubble .msg-fwd-nested { font-size: 15px; }
-.bubble .msg-fwd-name { max-width: 128px; }
-.bubble .msg-img { max-height: 220px; border-radius: 10px; }
-/* 转发卡片里的图仍只当缩略图，只是跟着放大一档；三个类名压过上面那条 .bubble .msg-img */
-.bubble .msg-fwd .msg-img { max-width: 220px; max-height: 108px; }
-.bubble .msg-img-chip,
-.bubble .msg-video { font-size: 16px; }
-.bubble .msg-video { padding: 9px 16px 9px 13px; gap: 8px; }
-.bubble .msg-video-play { width: 21px; height: 21px; }
-
-/* 金句 */
-.quote {
-  position: relative;
-  padding: 15px 18px 14px 44px;
-  margin-bottom: 10px;
-  background: var(--surface-2);
-  border-radius: 12px;
-}
-.quote::before {
-  content: '\\201C';
-  position: absolute;
-  left: 12px; top: 2px;
-  font-size: 44px;
-  line-height: 1;
-  font-family: Georgia, 'Times New Roman', serif;
-  color: #c9d0ea;
-}
-.quote-text { font-size: 14.5px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
-.quote-meta { margin-top: 7px; font-size: 12.5px; color: var(--muted); }
-.quote-reason { margin-top: 4px; font-size: 12.5px; color: var(--ink-soft); }
-
-/* 活跃榜 */
-.rank { display: flex; align-items: center; gap: 11px; padding: 7px 0; }
-.rank-no {
-  flex: 0 0 auto;
-  width: 23px; height: 23px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 23px;
-  text-align: center;
-  color: var(--muted);
-  background: var(--surface-2);
-  font-variant-numeric: tabular-nums;
-}
-.rank-no.top1 { color: #fff; background: linear-gradient(135deg, #f6b73c, #ee8a2b); }
-.rank-no.top2 { color: #fff; background: linear-gradient(135deg, #c2ccdb, #9aa7bb); }
-.rank-no.top3 { color: #fff; background: linear-gradient(135deg, #e0a170, #c9824d); }
-.rank-avatar {
-  position: relative;
-  flex: 0 0 auto;
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 26px;
-  text-align: center;
-  object-fit: cover;
-  overflow: hidden;
-}
-.rank-main { flex: 1 1 auto; min-width: 0; }
-.rank-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.rank-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rank-num { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.rank-bar { height: 5px; margin-top: 5px; background: #edf0f7; border-radius: 999px; overflow: hidden; }
-.rank-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #6478f7, #a06ae0); }
-
-/* 用户画像 */
-.profile { display: flex; align-items: center; gap: 16px; position: relative; }
-.profile-avatar {
-  position: relative;
-  flex: 0 0 auto;
-  width: 62px; height: 62px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, .55);
-  object-fit: cover;
-  color: #fff;
-  font-size: 25px;
-  font-weight: 600;
-  line-height: 58px;
-  text-align: center;
-  overflow: hidden;
-}
-.profile-meta { min-width: 0; }
-
-.summary {
-  padding: 15px 17px;
-  font-size: 14.5px;
-  line-height: 1.75;
-  color: var(--ink-soft);
-  background: var(--surface-2);
-  border-radius: 12px;
-  white-space: pre-wrap;
-}
-.field { display: flex; gap: 10px; padding: 9px 0; align-items: baseline; }
-.field-label { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--muted); }
-.field-value { flex: 1 1 auto; font-size: 14px; color: var(--ink); white-space: pre-wrap; }
-
-.evidence {
-  padding: 10px 14px;
-  margin-bottom: 8px;
-  font-size: 13.5px;
-  line-height: 1.7;
-  color: var(--ink-soft);
-  background: var(--surface-2);
-  border-left: 3px solid #d6dcee;
-  border-radius: 0 10px 10px 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
+const MESSAGE = `
 /* 消息里的引用：被回复的那条压成一条窄带，浮在正文上方 */
 .msg-quote {
   display: block;
@@ -593,6 +354,128 @@ body {
   border-radius: 50%;
   object-fit: cover;
 }
+`
+
+/** 空状态与页脚，三张图都有 */
+const FOOTER = `
+.empty { font-size: 14px; color: var(--muted); padding: 2px 0 4px; }
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 34px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-top: 1px solid var(--line);
+}
+.footer span { word-break: break-all; }
+`
+
+/** 群分析独有：数字条、话题卡片、金句、活跃榜、活跃时段柱状图 */
+const REPORT_PARTS = `
+/* 统计磁贴 */
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.stat {
+  flex: 1 1 0;
+  min-width: 96px;
+  padding: 16px 10px 15px;
+  background: var(--surface-2);
+  text-align: center;
+}
+.stat-value {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.stat-label { margin-top: 3px; font-size: 11.5px; color: var(--muted); letter-spacing: .3px; }
+
+/* 话题卡片 */
+.topic {
+  position: relative;
+  padding: 14px 16px 14px 18px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  border-left: 3px solid var(--accent);
+}
+.topic-name { font-size: 15.5px; font-weight: 650; color: var(--ink); }
+.topic-detail { margin-top: 6px; font-size: 14px; color: var(--ink-soft); white-space: pre-wrap; }
+
+/* 金句 */
+.quote {
+  position: relative;
+  padding: 15px 18px 14px 44px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+  border-radius: 12px;
+}
+.quote::before {
+  content: '\\201C';
+  position: absolute;
+  left: 12px; top: 2px;
+  font-size: 44px;
+  line-height: 1;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #c9d0ea;
+}
+.quote-text { font-size: 14.5px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+.quote-meta { margin-top: 7px; font-size: 12.5px; color: var(--muted); }
+.quote-reason { margin-top: 4px; font-size: 12.5px; color: var(--ink-soft); }
+
+/* 活跃榜 */
+.rank { display: flex; align-items: center; gap: 11px; padding: 7px 0; }
+.rank-no {
+  flex: 0 0 auto;
+  width: 23px; height: 23px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 23px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.rank-no.top1 { color: #fff; background: linear-gradient(135deg, #f6b73c, #ee8a2b); }
+.rank-no.top2 { color: #fff; background: linear-gradient(135deg, #c2ccdb, #9aa7bb); }
+.rank-no.top3 { color: #fff; background: linear-gradient(135deg, #e0a170, #c9824d); }
+.rank-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 26px;
+  text-align: center;
+  object-fit: cover;
+  overflow: hidden;
+}
+.rank-main { flex: 1 1 auto; min-width: 0; }
+.rank-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.rank-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-num { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rank-bar { height: 5px; margin-top: 5px; background: #edf0f7; border-radius: 999px; overflow: hidden; }
+.rank-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #6478f7, #a06ae0); }
 
 /* 24 小时活跃柱状图 */
 .chart {
@@ -643,18 +526,382 @@ body {
   font-size: 12px;
   color: var(--muted);
 }
-
-.empty { font-size: 14px; color: var(--muted); padding: 2px 0 4px; }
-
-.footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 34px;
-  font-size: 11.5px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-top: 1px solid var(--line);
-}
-.footer span { word-break: break-all; }
 `
+
+/** 高光对话独有：对话块、气泡、头像与脚注 */
+const DIALOGUES_PARTS = `
+/*
+ * 高光对话。这张图只有一件事要做——把对话读顺，所以字号整体比其余版面大一档：
+ * 气泡正文 21px 是主角，标题 23px 压住它，发言人名与脚注退到 16/17px 当配角，
+ * 头像也从 64px 收到 54px。原先气泡 24px、周围仍是十几 px，主次差得太狠，
+ * 名字和脚注都像被踩扁了。
+ */
+.dialogue {
+  padding: 20px 20px 18px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border-radius: 16px;
+  border: 1px solid var(--line);
+}
+.dialogue-title {
+  font-size: 23px;
+  font-weight: 650;
+  line-height: 1.45;
+  color: var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px dashed #dfe4f0;
+}
+/*
+ * 头像顶对齐。原先是底对齐，一条带图或带转发卡片的发言能有两三百像素高，
+ * 头像被推到最底下，和顶上的名字隔了大半个气泡，谁说的就对不上号了。
+ */
+.turn { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.avatar {
+  position: relative;
+  flex: 0 0 auto;
+  width: 54px; height: 54px;
+  /* 名字那行占掉的高度（16 × 1.5 + 5px 下边距），让头像跟气泡第一行齐平而不是跟名字齐平 */
+  margin-top: 29px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 54px;
+  text-align: center;
+  overflow: hidden;
+}
+/* 留一成的余地给对侧的头像与呼吸空间，其余尽量让给正文 */
+.bubble-wrap { max-width: 88%; }
+.speaker { font-size: 16px; line-height: 1.5; color: var(--muted); padding: 0 4px 5px; }
+.bubble {
+  display: inline-block;
+  position: relative;
+  padding: 13px 20px;
+  font-size: 21px;
+  line-height: 1.75;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  /* 缺口开在左上角，对着头像——头像已经挪到顶上了 */
+  border-radius: 5px 18px 18px 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 对话脚注：学术要素与笑点说明 */
+.note { display: flex; gap: 10px; margin-top: 16px; font-size: 17px; line-height: 1.7; color: var(--ink-soft); }
+.note-tag {
+  flex: 0 0 auto;
+  padding: 3px 11px;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 600;
+  border-radius: 7px;
+}
+.note-tag.edu  { color: #b06a12; background: #fdf1de; }
+.note-tag.cold { color: #17867a; background: #ddf5f2; }
+
+/*
+ * 气泡里的消息元素跟着气泡一起放大。这些 msg-* 类同时用在群分析的金句和画像的
+ * 证据里——那两处正文只有十四五 px，全局改会把它们顶破，所以一律限定在 .bubble 内。
+ * 引用条、转发卡片、图注都按气泡正文的八成上下取值，主次不乱。
+ */
+.bubble .msg-quote { margin-bottom: 8px; padding: 6px 12px; font-size: 17px; border-radius: 0 9px 9px 0; }
+.bubble .msg-fwd {
+  margin: 7px 0;
+  padding: 11px 15px 10px;
+  column-gap: 10px;
+  row-gap: 4px;
+  font-size: 17px;
+  border-radius: 12px;
+}
+.bubble .msg-fwd-head { padding-bottom: 7px; margin-bottom: 4px; font-size: 15px; }
+.bubble .msg-fwd-more,
+.bubble .msg-fwd-nested { font-size: 15px; }
+.bubble .msg-fwd-name { max-width: 128px; }
+.bubble .msg-img { max-height: 220px; border-radius: 10px; }
+/* 转发卡片里的图仍只当缩略图，只是跟着放大一档；三个类名压过上面那条 .bubble .msg-img */
+.bubble .msg-fwd .msg-img { max-width: 220px; max-height: 108px; }
+.bubble .msg-img-chip,
+.bubble .msg-video { font-size: 16px; }
+.bubble .msg-video { padding: 9px 16px 9px 13px; gap: 8px; }
+.bubble .msg-video-play { width: 21px; height: 21px; }
+`
+
+/**
+ * 用户画像独有：页面级分栏、头部资料、整体印象、要点与代表发言。
+ * 分栏（`.columns` 与那几条 break-inside）只有这张图用得上——
+ * 另外两张的多列发生在板块内部，走的是 `.group` 那张网格。
+ */
+const PERSONA_PARTS = `
+/*
+ * 两列排版走多列流：浏览器自己平衡两列高度。
+ * 按分节硬分左右会失衡——高光对话的篇幅经常顶得上其余两节之和，
+ * 那样左列会空掉一大半。
+ */
+.columns {
+  column-count: 2;
+  column-gap: 26px;
+}
+
+/* 卡片是最小不可分单位，标题不能和它后面的内容被拆到两列 */
+.summary, .field, .evidence { break-inside: avoid; }
+.section-title { break-after: avoid; }
+/* 分节默认允许跨列续排，否则又退化成按节分栏；标了 keep 的整块搬走 */
+.section { break-inside: auto; }
+.section.keep { break-inside: avoid; }
+
+/* 用户画像 */
+.profile { display: flex; align-items: center; gap: 16px; position: relative; }
+.profile-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  width: 62px; height: 62px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .55);
+  object-fit: cover;
+  color: #fff;
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 58px;
+  text-align: center;
+  overflow: hidden;
+}
+.profile-meta { min-width: 0; }
+
+.summary {
+  padding: 15px 17px;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border-radius: 12px;
+  white-space: pre-wrap;
+}
+.field { display: flex; gap: 10px; padding: 9px 0; align-items: baseline; }
+.field-label { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--muted); }
+.field-value { flex: 1 1 auto; font-size: 14px; color: var(--ink); white-space: pre-wrap; }
+
+.evidence {
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border-left: 3px solid #d6dcee;
+  border-radius: 0 10px 10px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+`
+
+/** 「群分析」样式表 */
+export const REPORT_STYLE = [RESET, BANNER, SECTION, GROUP, CHIPS, REPORT_PARTS, MESSAGE, FOOTER].join('')
+
+/** 「高光对话」样式表 */
+export const DIALOGUES_STYLE = [RESET, BANNER, SECTION, GROUP, DIALOGUES_PARTS, MESSAGE, FOOTER].join('')
+
+/** 「用户画像」样式表 */
+export const PERSONA_STYLE = [RESET, BANNER, SECTION, CHIPS, PERSONA_PARTS, MESSAGE, FOOTER].join('')
+
+/**
+ * ── 页面模板 ──────────────────────────────────────────────
+ *
+ * 三个出口各一份，分别维护：改群分析的版面不会牵动画像那张图。
+ * 每份都是一整篇文档，`{...}` 是占位符，由 html.ts 把渲染好的板块灌进去；
+ * 三份共用同一张样式表（STYLE），也共用下面这几个占位符：
+ *
+ * - `{title}` 文档标题（已转义）
+ * - `{width}` 画布宽度（CSS 像素），来自「图片宽度」配置
+ * - `{style}` 生效的样式表
+ *
+ * 改模板时 `#card` 必须留着：截图按这个元素的实际高度裁切，
+ * 找不到它就会退化成整页视口截图，底下拖一大块空白。
+ *
+ * 认不出的占位符原样留在页面上——写错名字时看得见，
+ * 而不是悄悄渲染成一块空白让人以为是数据缺了。
+ */
+
+/** 三份模板共用的文档头。抽出来只为少抄三遍，模板本身仍是各自完整的一篇 */
+const HEAD = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>{style}
+html { width: {width}px; }
+</style>
+</head>`
+
+/**
+ * 群聊分析报告。
+ *
+ * 独有占位符：
+ * - `{groupName}` `{timeRange}` 群名与时间范围（已转义）
+ * - `{stats}`     顶部数字条的内容（若干个 `.stat`）
+ * - `{topics}`    热门话题分节
+ * - `{quotes}`    金句分节，没有金句时是空串
+ * - `{ranks}`     活跃榜分节，没有数据时是空串
+ * - `{hourly}`    活跃时段分节
+ * - `{totalMessages}` `{totalParticipants}` `{totalChars}` `{mostActivePeriod}` 原始数值
+ *
+ * 四个分节都在 `.body` 里，调换顺序即可改版面；不想要哪节，删掉对应占位符就行。
+ */
+export const REPORT_TEMPLATE = `${HEAD}
+<body><div id="card">
+<div class="banner">
+<div class="banner-title">群聊分析报告</div>
+<div class="banner-sub">{groupName}</div>
+<div class="banner-sub">{timeRange}</div>
+</div>
+<div class="stats">{stats}</div>
+<div class="body">{topics}{quotes}{ranks}{hourly}</div>
+<div class="footer"><span>{groupName}</span><span>共 {totalMessages} 条消息</span></div>
+</div></body>
+</html>`
+
+/**
+ * 高光对话。
+ *
+ * 独有占位符：
+ * - `{groupName}` `{timeRange}` 群名与时间范围（已转义）
+ * - `{dialogues}` 全部对话段，一段没有时是一句提示文案
+ * - `{count}`     对话段数
+ * - `{totalMessages}` 取样的消息条数
+ *
+ * 这张图单列通栏，不排两列——聊天气泡要靠宽度才排得开。
+ */
+export const DIALOGUES_TEMPLATE = `${HEAD}
+<body><div id="card">
+<div class="banner">
+<div class="banner-title">高光对话</div>
+<div class="banner-sub">{groupName}</div>
+<div class="banner-sub">{timeRange}</div>
+</div>
+<div class="body"><div class="section">{dialogues}</div></div>
+<div class="footer"><span>{groupName}</span><span>{count} 段 · 取自 {totalMessages} 条消息</span></div>
+</div></body>
+</html>`
+
+/**
+ * 用户画像。
+ *
+ * 独有占位符：
+ * - `{name}` `{userId}` 昵称与用户 ID（已转义）
+ * - `{avatar}`  头像元素（首字色块打底，有地址时图片盖在上面）
+ * - `{summary}` 整体印象分节
+ * - `{points}`  画像要点分节，三项都空时是空串
+ * - `{evidence}` 代表发言分节，没有引用时是空串
+ * - `{columns}` 分栏开关：画布够宽且分节多于一个时是 `columns`，否则是空串
+ *
+ * `{columns}` 拼在 `.body` 的 class 上，删掉它就是恒定单列。
+ */
+export const PERSONA_TEMPLATE = `${HEAD}
+<body><div id="card">
+<div class="banner"><div class="profile">
+{avatar}
+<div class="profile-meta">
+<div class="banner-title">{name}</div>
+<div class="banner-sub">用户画像 · {userId}</div>
+</div></div></div>
+<div class="body {columns}">{summary}{points}{evidence}</div>
+<div class="footer"><span>{name}</span><span>用户画像</span></div>
+</div></body>
+</html>`
+
+/**
+ * 渲染取用的配置切片。
+ * 只声明用得上的这几项，html.ts 因此不必认识整份 Config——
+ * 结构上兼容即可，改配置不牵动模板层。
+ */
+export interface RenderStyleConfig {
+  /** 画布宽度（CSS 像素） */
+  imageWidth: number
+  /** 自定义群分析模板与样式表，留空用内置的 */
+  reportHtmlTemplate?: string
+  reportCssTemplate?: string
+  /** 自定义高光对话模板与样式表，留空用内置的 */
+  dialoguesHtmlTemplate?: string
+  dialoguesCssTemplate?: string
+  /** 自定义用户画像模板与样式表，留空用内置的 */
+  personaHtmlTemplate?: string
+  personaCssTemplate?: string
+  /** 追加样式，三张图共用，接在各自的样式表之后 */
+  extraCss?: string
+}
+
+/** 一个出口的版面：内置的那份模板与样式表，加上配置里对应的自定义值 */
+export interface OutputTheme {
+  /** 内置页面模板 */
+  template: string
+  /** 内置样式表 */
+  style: string
+  /** 配置里的自定义页面模板，留空回退到内置 */
+  customTemplate?: string
+  /** 配置里的自定义样式表，留空回退到内置 */
+  customStyle?: string
+}
+
+/** 三个出口各自的内置版面，配 config 里对应的两项 */
+export const REPORT_THEME = (config: RenderStyleConfig): OutputTheme => ({
+  template: REPORT_TEMPLATE,
+  style: REPORT_STYLE,
+  customTemplate: config.reportHtmlTemplate,
+  customStyle: config.reportCssTemplate,
+})
+
+export const DIALOGUES_THEME = (config: RenderStyleConfig): OutputTheme => ({
+  template: DIALOGUES_TEMPLATE,
+  style: DIALOGUES_STYLE,
+  customTemplate: config.dialoguesHtmlTemplate,
+  customStyle: config.dialoguesCssTemplate,
+})
+
+export const PERSONA_THEME = (config: RenderStyleConfig): OutputTheme => ({
+  template: PERSONA_TEMPLATE,
+  style: PERSONA_STYLE,
+  customTemplate: config.personaHtmlTemplate,
+  customStyle: config.personaCssTemplate,
+})
+
+/** 配置项留空（或只有空白）时回退到内置的那份 */
+const fallback = (value: string | undefined, builtin: string) =>
+  value?.trim() ? value : builtin
+
+/**
+ * 填占位符。
+ *
+ * 只扫一遍模板，填进去的内容不再参与后续匹配——正文和样式表都是不可控的文本，
+ * 群消息里出现一句 `{ranks}` 不该把活跃榜复制到那个位置上去。
+ * 替换值走回调而不是字符串，用户 CSS 里的 `$&` `$1` 才不会被当成反向引用吃掉。
+ * 名字对不上的占位符原样留着，见上面模板区的说明。
+ */
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (placeholder, key: string) =>
+    key in values ? values[key] : placeholder)
+}
+
+/** 某个出口最终生效的样式表：自定义（或内置）那份，后面接上共用的追加样式 */
+export function resolveStyle(config: RenderStyleConfig, theme: OutputTheme): string {
+  const base = fallback(theme.customStyle, theme.style)
+  const extra = config.extraCss?.trim()
+  return extra ? `${base}\n${extra}\n` : base
+}
+
+/**
+ * 套模板拼出完整文档。`{width}` `{style}` 由这里统一灌，其余板块由调用方给，
+ * 文本类的值调用方负责转义。
+ */
+export function resolveDocument(
+  config: RenderStyleConfig,
+  theme: OutputTheme,
+  values: Record<string, string>,
+): string {
+  return fill(fallback(theme.customTemplate, theme.template), {
+    ...values,
+    width: String(config.imageWidth),
+    style: resolveStyle(config, theme),
+  })
+}

@@ -255,6 +255,51 @@ puppeteer 是**可选**依赖。没装、没启用、或者渲染过程中出了
 
 高光对话的气泡逐轮自上而下、一律靠左，发言人靠头像和名字区分。正文按 15.5px 排（比报告里其他文字大一档）——聊天记录是这张图的主角，1000px 宽的画布上按 14px 排在手机上看太吃力。**头像顶对齐**：底对齐时，一条带图或带转发卡片的发言能有两三百像素高，头像被推到最底下，和顶上的名字隔了大半个气泡，谁说的就对不上号了；气泡的缺口也跟着开在左上角，对着头像。活跃榜的条形长度相对榜首按比例绘制，前三名有奖牌配色。远程图片会等加载完再截图，单张最多等 10 秒，超时就按当前状态拍，不会把整次渲染拖死。
 
+### 自定义版面
+
+版面开放在配置里，改完不用动代码。页面模板与样式表都按三个出口各一份，分别维护——给群分析换个配色，不会顺手把画像那张图也改了：
+
+| 配置项 | 作用 |
+| --- | --- |
+| `extraCss` | 追加样式，**三张图共用**，接在各自的样式表之后，同名规则覆盖前面的 |
+| `reportHtmlTemplate` / `reportCssTemplate` | 「群分析」的页面模板与样式表 |
+| `dialoguesHtmlTemplate` / `dialoguesCssTemplate` | 「高光对话」的页面模板与样式表 |
+| `personaHtmlTemplate` / `personaCssTemplate` | 「用户画像」的页面模板与样式表 |
+
+除 `extraCss` 外，各项预填的就是内置默认值，照着改即可；**清空则回到内置那份**（插件更新时也会跟着更新）。
+
+三份样式表是各自完整的 CSS，共用的段落（重置、配色变量、分节、消息正文、页脚）在每份里都有一套，独有的只出现在对应那份里：数字条、话题、金句、活跃榜、柱状图只在群分析，气泡与对话脚注只在高光对话，头部资料、要点、代表发言与页面级分栏只在用户画像。
+
+**只想换配色就用 `extraCss`。** 版面的颜色全走 `#card` 上的 CSS 变量，重写几个变量即可，一次对三张图都生效，也不必把哪份样式表整个复制一遍——这样插件后续更新版面时，改动不会被盖掉：
+
+```css
+#card {
+  --accent: #ff6b6b;
+  --accent-2: #ff9f43;
+  --accent-soft: #fff1f1;
+  --surface-2: #fff8f5;
+}
+```
+
+#### 页面模板的占位符
+
+三份模板都是一整篇 HTML 文档，`{...}` 由插件填入渲染好的板块。公共的三个：`{title}` 标题（已转义）、`{width}` 图片宽度、`{style}` 该出口的样式表。各自独有的：
+
+| 模板 | 独有占位符 |
+| --- | --- |
+| `reportHtmlTemplate` | `{groupName}` `{timeRange}`；`{stats}` 数字条；四个分节 `{topics}` `{quotes}` `{ranks}` `{hourly}`；四个原始数值 `{totalMessages}` `{totalParticipants}` `{totalChars}` `{mostActivePeriod}` |
+| `dialoguesHtmlTemplate` | `{groupName}` `{timeRange}`；`{dialogues}` 全部对话段；`{count}` 段数；`{totalMessages}` 取样条数 |
+| `personaHtmlTemplate` | `{name}` `{userId}`；`{avatar}` 头像元素；三个分节 `{summary}` `{points}` `{evidence}`；`{columns}` 分栏开关 |
+
+分节占位符可以随意调换先后来改版面，删掉哪个那一节就不出现。群分析默认排 `{topics}{quotes}{ranks}{hourly}`，想把活跃榜提到最前面，把它挪到最左边即可。画像的 `{columns}` 拼在 `.body` 的 class 上，画布够宽且分节多于一个时才是 `columns`，删掉它就是恒定单列——页面级分栏只有画像用得上，另外两张图的多列发生在板块内部，走的是 `.group` 那张网格。
+
+有几条约束：
+
+- **`#card` 必须保留**：截图按这个元素的实际高度裁切，找不到它就退化成整页视口截图，底下会拖一大块空白。
+- 板块内部那些 class（`.banner` `.section` `.rank` `.bubble` 等）由 `render/html.ts` 写死，换样式表时对着这些名字写；一条都不认得的样式表只会得到一张裸 HTML 的截图，不会让渲染失败。
+- 名字对不上的占位符**原样留在页面上**，写错时看得见，不会悄悄渲染成一块空白让人以为是数据缺了。
+- 占位符只填一遍，填进去的内容不再参与匹配——群消息里出现一句 `{ranks}` 不会把活跃榜复制到那个位置上去。
+
 ## 时区
 
 `timezone` 填 IANA 名称（如 `Asia/Shanghai`），留空则跟随运行 Koishi 的机器时区。它同时决定三处，三处必须一致，否则报告里的时间范围会和柱状图对不上：
@@ -317,9 +362,9 @@ puppeteer 是**可选**依赖。没装、没启用、或者渲染过程中出了
 | `personaOnlyCurrentGroup` | `false` | 只统计当前频道 |
 | `personaViewAuthority` | `3` | 看他人画像所需权限等级，0–4 |
 
-### 用户屏蔽 / 图片渲染 / 提示词
+### 用户屏蔽 / 图片渲染 / 版面模板 / 提示词
 
-四份屏蔽名单见「用户屏蔽」；`renderImage`（`true`）、`imageWidth`（`1000`，480–1600）、`imageScale`（`2`，1–3）见「图片输出」；五段提示词模板见「LLM 接入」。
+四份屏蔽名单见「用户屏蔽」；`renderImage`（`true`）、`imageWidth`（`1000`，480–1600）、`imageScale`（`2`，1–3）见「图片输出」；`extraCss`（空）与三个出口各自的页面模板、样式表（`report*` / `dialogues*` / `persona*`，共六项）见「自定义版面」；五段提示词模板见「LLM 接入」。
 
 ## 调试
 
@@ -365,7 +410,7 @@ src/
 │   └── report.ts       markdown 报告渲染（纯函数）
 ├── render/
 │   ├── html.ts         图片版面的 HTML 拼装（纯函数）
-│   ├── theme.ts        样式表
+│   ├── theme.ts        三份样式表与页面模板，以及占位符填充
 │   └── image.ts        puppeteer 截图，失败返回 null 由调用方回退
 └── commands/
     ├── analysis.ts     群分析 / 自由问答
@@ -374,7 +419,7 @@ src/
     └── target.ts       解析分析目标与群名
 ```
 
-依赖是单向的：`logger`、`types`、`text`、`transcript`、`markdown`、`time` 是叶子，`config`、`database` 只依赖它们，`llm` 与 `message` 建立在这之上，`analysis` 与 `render` 再往上，`commands` 位于最外层。统计与两种渲染（markdown / HTML）都被拆成不依赖 `Context` 的纯函数，可以脱离 Koishi 单独测试。
+依赖是单向的：`logger`、`types`、`text`、`transcript`、`markdown`、`time` 是叶子，`config`、`database` 只依赖它们（外加 `render/theme` 里的两份模板默认值，与 `config/prompts.ts` 同理，只是常量），`llm` 与 `message` 建立在这之上，`analysis` 与 `render` 再往上，`commands` 位于最外层。统计与两种渲染（markdown / HTML）都被拆成不依赖 `Context` 的纯函数，可以脱离 Koishi 单独测试。
 
 ## 许可
 

@@ -74,7 +74,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
 
         const image = await renderHtmlToImage(
           ctx, config,
-          renderPersonaHtml(outcome.persona, evidence, outcome.avatar, config.imageWidth),
+          renderPersonaHtml(outcome.persona, evidence, outcome.avatar, config),
           '用户画像',
         )
         // 图文混在一条消息里在 QQ 官方接口上容易出问题，缓存说明另发一条

@@ -34,11 +34,17 @@ export function apply(ctx: Context, config: Config) {
     ? `图片（${config.imageWidth}px @${config.imageScale}x）${ctx.puppeteer ? '' : '，但 puppeteer 未就绪，将回退为文字'}`
     : '文字'}`)
 
-  // 提示词模板太长且很少是排查重点，摘要里跳过；需要看时开 debug 会打完整提示词
+  // 提示词与版面模板都太长且很少是排查重点，摘要里跳过
+  const skipped = [
+    'reportHtmlTemplate', 'reportCssTemplate',
+    'dialoguesHtmlTemplate', 'dialoguesCssTemplate',
+    'personaHtmlTemplate', 'personaCssTemplate',
+    'extraCss',
+  ]
   const summary = Object.fromEntries(
-    Object.entries(config).filter(([key]) => !key.startsWith('prompt')),
+    Object.entries(config).filter(([key]) => !key.startsWith('prompt') && !skipped.includes(key)),
   )
-  log.debug('生效配置（不含提示词模板）: %o', { ...summary, openaiApiKey: config.openaiApiKey ? '***' : '' })
+  log.debug('生效配置（不含提示词与版面模板）: %o', { ...summary, openaiApiKey: config.openaiApiKey ? '***' : '' })
 
   extendModel(ctx)
   applyMessageListener(ctx, config)

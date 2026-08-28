@@ -1,5 +1,10 @@
 import { Schema } from 'koishi'
 import * as prompts from './prompts'
+import {
+  DIALOGUES_STYLE, DIALOGUES_TEMPLATE,
+  PERSONA_STYLE, PERSONA_TEMPLATE,
+  REPORT_STYLE, REPORT_TEMPLATE,
+} from '../render/theme'
 
 export interface Config {
   /** 监听所有群组（true 时忽略 groups 配置） */
@@ -76,6 +81,17 @@ export interface Config {
   imageWidth: number
   /** 截图缩放倍率，2 即二倍图 */
   imageScale: number
+  /** 群分析的页面模板与样式表，留空用内置的 */
+  reportHtmlTemplate: string
+  reportCssTemplate: string
+  /** 高光对话的页面模板与样式表，留空用内置的 */
+  dialoguesHtmlTemplate: string
+  dialoguesCssTemplate: string
+  /** 用户画像的页面模板与样式表，留空用内置的 */
+  personaHtmlTemplate: string
+  personaCssTemplate: string
+  /** 追加样式，三张图共用，接在各自的样式表之后 */
+  extraCss: string
 
   promptTopic: string
   promptGoldenQuotes: string
@@ -165,4 +181,27 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('用户画像提示词。占位符：{messages} {username} {userId} {lookbackDays}')
       .default(prompts.USER_PERSONA),
   }).description('提示词'),
+
+  Schema.object({
+    extraCss: Schema.string().role('textarea').default('')
+      .description('追加样式，三张图共用，接在各自的样式表之后，同名规则覆盖前面的。改配色只要在这里重写一遍 `#card { --accent: #ff6b6b; }` 之类的变量即可，不必动下面那三份样式表——插件后续更新版面时也不会把你的改动盖掉'),
+    reportHtmlTemplate: Schema.string().role('textarea')
+      .description('「群分析」页面模板。除公共占位符外还有：`{groupName}` `{timeRange}`、`{stats}` 数字条、`{topics}` 热门话题、`{quotes}` 金句、`{ranks}` 活跃榜、`{hourly}` 活跃时段，以及 `{totalMessages}` `{totalParticipants}` `{totalChars}` `{mostActivePeriod}` 四个原始数值。调换四个分节的先后即可改版面，删掉哪个占位符哪节就不出现')
+      .default(REPORT_TEMPLATE),
+    reportCssTemplate: Schema.string().role('textarea')
+      .description('「群分析」样式表')
+      .default(REPORT_STYLE),
+    dialoguesHtmlTemplate: Schema.string().role('textarea')
+      .description('「高光对话」页面模板。除公共占位符外还有：`{groupName}` `{timeRange}`、`{dialogues}` 全部对话段、`{count}` 段数、`{totalMessages}` 取样条数')
+      .default(DIALOGUES_TEMPLATE),
+    dialoguesCssTemplate: Schema.string().role('textarea')
+      .description('「高光对话」样式表')
+      .default(DIALOGUES_STYLE),
+    personaHtmlTemplate: Schema.string().role('textarea')
+      .description('「用户画像」页面模板。除公共占位符外还有：`{name}` `{userId}`、`{avatar}` 头像、`{summary}` 整体印象、`{points}` 画像要点、`{evidence}` 代表发言，以及 `{columns}` 分栏开关（拼在 `.body` 的 class 上，删掉即恒定单列）')
+      .default(PERSONA_TEMPLATE),
+    personaCssTemplate: Schema.string().role('textarea')
+      .description('「用户画像」样式表')
+      .default(PERSONA_STYLE),
+  }).description('版面模板（三个出口各一份页面模板与样式表，分别维护——改群分析的版面不会牵动画像那张图；只有「追加样式」是三张图共用的。页面模板的公共占位符：`{title}` 标题、`{width}` 图片宽度、`{style}` 样式表；清空任一项即回到内置那份。**`#card` 必须保留**——截图按这个元素裁切，找不到它会拍成整页视口，底下拖一大块空白）'),
 ])

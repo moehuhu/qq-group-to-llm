@@ -21,7 +21,7 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
   /** 优先出图，puppeteer 不可用或渲染失败时回退为 markdown 文本 */
   const send = async (digest: DialogueDigest) => {
     const image = await renderHtmlToImage(
-      ctx, config, renderDialoguesHtml(digest, config.imageWidth), '高光对话',
+      ctx, config, renderDialoguesHtml(digest, config), '高光对话',
     )
     return image ?? toMarkdownMessage(renderDialogues(digest))
   }

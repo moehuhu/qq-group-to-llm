@@ -9,7 +9,10 @@
  * 用户内容里的 emoji 是数据，原样透传，这条只约束模板自己写死的字符。
  */
 import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
-import { STYLE } from './theme'
+import {
+  DIALOGUES_THEME, PERSONA_THEME, REPORT_THEME,
+  resolveDocument, type RenderStyleConfig,
+} from './theme'
 import { cleanContent } from '../text'
 
 const toArray = (value: unknown): string[] =>
@@ -293,28 +296,14 @@ function group(inner: string, count: number, maxColumns: 1 | 2 | 3, width: numbe
 }
 
 /**
- * 页面级两列（仅用户画像用）：分节整块地灌进两列。
+ * 页面级两列（仅用户画像用）：分节整块地灌进两列，容器由模板给。
  * 群分析不走这条——它的列数是逐板块指定的。
+ * 只有一个分节时不分栏：两列里空着一列还不如老老实实通栏。
  */
-function layout(width: number, sections: string[]): string {
-  const present = sections.filter(Boolean)
-  const twoColumn = width >= TWO_COLUMN_MIN_WIDTH && present.length > 1
-  return `<div class="body${twoColumn ? ' columns' : ''}">${present.join('')}</div>`
-}
-
-/** 拼装完整文档。宽度由外层容器控制，截图时按 #card 的实际高度裁切 */
-function document_(title: string, width: number, inner: string): string {
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>${escapeHtml(title)}</title>
-<style>${STYLE}
-html { width: ${width}px; }
-</style>
-</head>
-<body><div id="card">${inner}</div></body>
-</html>`
+function columnsClass(width: number, sections: string[]): string {
+  return width >= TWO_COLUMN_MIN_WIDTH && sections.filter(Boolean).length > 1
+    ? 'columns'
+    : ''
 }
 
 const stat = (value: string | number, label: string) =>
@@ -375,26 +364,14 @@ function renderHourly(hourly: number[], totalMessages: number): string {
     `</div>`
 }
 
-/** 群聊分析报告 → HTML */
-export function renderReportHtml(result: GroupAnalysisResult, width: number): string {
-  const parts: string[] = []
+/** 群聊分析报告 → HTML。板块各自渲染，位置由 REPORT_TEMPLATE 决定 */
+export function renderReportHtml(result: GroupAnalysisResult, config: RenderStyleConfig): string {
+  const width = config.imageWidth
 
-  parts.push(
-    `<div class="banner">` +
-    `<div class="banner-title">群聊分析报告</div>` +
-    `<div class="banner-sub">${escapeHtml(result.groupName)}</div>` +
-    `<div class="banner-sub">${escapeHtml(result.timeRange)}</div>` +
-    `</div>`,
-  )
-
-  parts.push(
-    `<div class="stats">` +
-    stat(result.totalMessages, '消息') +
+  const stats = stat(result.totalMessages, '消息') +
     stat(result.totalParticipants, '参与者') +
     stat(result.totalChars, '总字数') +
-    (result.mostActivePeriod ? stat(result.mostActivePeriod, '最活跃时段') : '') +
-    `</div>`,
-  )
+    (result.mostActivePeriod ? stat(result.mostActivePeriod, '最活跃时段') : '')
 
   const topicCards = result.topics.length
     ? result.topics.map((topic) => {
@@ -444,45 +421,36 @@ export function renderReportHtml(result: GroupAnalysisResult, width: number): st
     ranksHtml = section('活跃榜', group(rows, result.userStats.length, 2, width))
   }
 
-  // 分节通栏纵向堆叠，分栏发生在各板块内部
-  parts.push(`<div class="body">${[
-    section('热门话题', topics),
-    quotesHtml,
-    ranksHtml,
-    // 活跃时段固定压在报告最底部
-    section('活跃时段', renderHourly(result.hourly ?? [], result.totalMessages)),
-  ].filter(Boolean).join('')}</div>`)
-  parts.push(
-    `<div class="footer"><span>${escapeHtml(result.groupName)}</span>` +
-    `<span>共 ${result.totalMessages} 条消息</span></div>`,
-  )
-
-  return document_('群聊分析报告', width, parts.join(''))
+  return resolveDocument(config, REPORT_THEME(config), {
+    title: escapeHtml('群聊分析报告'),
+    groupName: escapeHtml(result.groupName),
+    timeRange: escapeHtml(result.timeRange),
+    totalMessages: String(result.totalMessages),
+    totalParticipants: String(result.totalParticipants),
+    totalChars: String(result.totalChars),
+    mostActivePeriod: escapeHtml(result.mostActivePeriod ?? ''),
+    stats,
+    topics: section('热门话题', topics),
+    quotes: quotesHtml,
+    ranks: ranksHtml,
+    hourly: section('活跃时段', renderHourly(result.hourly ?? [], result.totalMessages)),
+  })
 }
 
 /** 高光对话 → HTML。单列通栏：聊天气泡要靠宽度才排得开 */
-export function renderDialoguesHtml(digest: DialogueDigest, width: number): string {
-  const parts: string[] = []
-
-  parts.push(
-    `<div class="banner">` +
-    `<div class="banner-title">高光对话</div>` +
-    `<div class="banner-sub">${escapeHtml(digest.groupName)}</div>` +
-    `<div class="banner-sub">${escapeHtml(digest.timeRange)}</div>` +
-    `</div>`,
-  )
-
-  const body = digest.dialogues.length
-    ? group(digest.dialogues.map(renderDialogue).join(''), digest.dialogues.length, 1, width)
+export function renderDialoguesHtml(digest: DialogueDigest, config: RenderStyleConfig): string {
+  const dialogues = digest.dialogues.length
+    ? group(digest.dialogues.map(renderDialogue).join(''), digest.dialogues.length, 1, config.imageWidth)
     : `<div class="empty">这段时间没有找到符合条件的对话。</div>`
-  parts.push(`<div class="body"><div class="section">${body}</div></div>`)
 
-  parts.push(
-    `<div class="footer"><span>${escapeHtml(digest.groupName)}</span>` +
-    `<span>${digest.dialogues.length} 段 · 取自 ${digest.totalMessages} 条消息</span></div>`,
-  )
-
-  return document_('高光对话', width, parts.join(''))
+  return resolveDocument(config, DIALOGUES_THEME(config), {
+    title: escapeHtml('高光对话'),
+    groupName: escapeHtml(digest.groupName),
+    timeRange: escapeHtml(digest.timeRange),
+    count: String(digest.dialogues.length),
+    totalMessages: String(digest.totalMessages),
+    dialogues,
+  })
 }
 
 /** 用户画像 → HTML */
@@ -490,19 +458,9 @@ export function renderPersonaHtml(
   persona: UserPersonaProfile,
   evidence: string[],
   avatar: string | undefined,
-  width: number,
+  config: RenderStyleConfig,
 ): string {
   const name = persona.username || persona.userId
-  const parts: string[] = []
-
-  parts.push(
-    `<div class="banner"><div class="profile">` +
-    avatarTag(name, avatar, 'profile-avatar') +
-    `<div class="profile-meta">` +
-    `<div class="banner-title">${escapeHtml(name)}</div>` +
-    `<div class="banner-sub">用户画像 · ${escapeHtml(persona.userId)}</div>` +
-    `</div></div></div>`,
-  )
 
   const summaryHtml = section('整体印象',
     `<div class="summary">${escapeHtml(persona.summary?.trim() || '（无总结）')}</div>`, true)
@@ -537,8 +495,14 @@ export function renderPersonaHtml(
       evidence.map((quote) => `<div class="evidence">${renderMessageContent(quote)}</div>`).join(''))
     : ''
 
-  parts.push(layout(width, [summaryHtml, pointsHtml, evidenceHtml]))
-  parts.push(`<div class="footer"><span>${escapeHtml(name)}</span><span>用户画像</span></div>`)
-
-  return document_(`用户画像 · ${name}`, width, parts.join(''))
+  return resolveDocument(config, PERSONA_THEME(config), {
+    title: escapeHtml(`用户画像 · ${name}`),
+    name: escapeHtml(name),
+    userId: escapeHtml(persona.userId),
+    avatar: avatarTag(name, avatar, 'profile-avatar'),
+    columns: columnsClass(config.imageWidth, [summaryHtml, pointsHtml, evidenceHtml]),
+    summary: summaryHtml,
+    points: pointsHtml,
+    evidence: evidenceHtml,
+  })
 }

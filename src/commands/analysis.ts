@@ -21,7 +21,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
   /** 优先出图，puppeteer 不可用或渲染失败时回退为 markdown 文本 */
   const send = async (result: GroupAnalysisResult) => {
     const image = await renderHtmlToImage(
-      ctx, config, renderReportHtml(result, config.imageWidth), '群分析',
+      ctx, config, renderReportHtml(result, config), '群分析',
     )
     return image ?? toMarkdownMessage(renderReport(result))
   }
