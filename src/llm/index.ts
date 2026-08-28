@@ -177,7 +177,7 @@ export class LLMService extends Service {
     let buffer = ''
     let firstChunkAt = 0
 
-    // 每 10 秒输出一次进度：当前已输出字数 + 输出速度（字/秒）
+    // 每 120 秒输出一次进度：当前已输出字数 + 输出速度（字/秒）
     let chars = 0
     let speedBaseAt = startedAt
     let speedBaseChars = 0
@@ -188,7 +188,7 @@ export class LLMService extends Service {
       this.log.info(`[${task}] 流式进度：已输出 ${chars} 字，速度 ${speed.toFixed(1)} 字/秒`)
       speedBaseAt = now
       speedBaseChars = chars
-    }, 10000)
+    }, 120000)
 
     try {
       for (;;) {
