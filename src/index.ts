@@ -1,4 +1,7 @@
+import { resolve } from 'path'
 import { Context } from 'koishi'
+// 仅为拿到 ctx.console 的类型增强；type-only 导入不会产生运行时依赖
+import type { } from '@koishijs/plugin-console'
 import type { Config } from './config'
 import { logger } from './logger'
 import { extendModel } from './database'
@@ -17,10 +20,11 @@ export * from './time'
 export { LLMService } from './llm'
 
 export const name = 'qq-group-to-llm'
-// puppeteer 是可选依赖：没有它时图片渲染自动回退为 markdown 文本
+// puppeteer 与 console 都是可选依赖：
+// 没有 puppeteer 时图片渲染自动回退为 markdown 文本，没有 console 时只是设置页少块预览
 export const inject = {
   required: ['database', 'http'],
-  optional: ['puppeteer'],
+  optional: ['puppeteer', 'console'],
 }
 
 export function apply(ctx: Context, config: Config) {
@@ -46,10 +50,26 @@ export function apply(ctx: Context, config: Config) {
   )
   log.debug('生效配置（不含提示词与版面模板）: %o', { ...summary, openaiApiKey: config.openaiApiKey ? '***' : '' })
 
+  applyConsole(ctx)
   extendModel(ctx)
   applyMessageListener(ctx, config)
   applyRetentionCleanup(ctx, config)
 
   ctx.plugin(LLMService, config)
   ctx.inject(['qqGroupLlm'], (ctx) => applyCommands(ctx, config))
+}
+
+/**
+ * 给控制台的插件设置页挂上版面预览。
+ *
+ * 控制台没装就整段跳过——预览是锦上添花的，不该成为跑这个插件的前提。
+ * dev 指向 client 源码（开发时由 vite 现编），prod 指向 `yarn build` 产出的 dist。
+ */
+function applyConsole(ctx: Context) {
+  ctx.inject(['console'], (ctx) => {
+    ctx.console.addEntry({
+      dev: resolve(__dirname, '../client/index.ts'),
+      prod: resolve(__dirname, '../dist'),
+    })
+  })
 }

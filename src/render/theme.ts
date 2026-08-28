@@ -590,7 +590,7 @@ const DIALOGUES_PARTS = `
 }
 
 /* 对话脚注：学术要素与笑点说明 */
-.note { display: flex; gap: 10px; margin-top: 16px; font-size: 17px; line-height: 1.7; color: var(--ink-soft); }
+.note { display: flex; align-items: baseline; gap: 10px; margin-top: 16px; font-size: 17px; line-height: 1.7; color: var(--ink-soft); }
 .note-tag {
   flex: 0 0 auto;
   padding: 3px 11px;

@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "types": [
       "node"
     ]

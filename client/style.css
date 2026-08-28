@@ -1,0 +1,127 @@
+/*
+ * 预览的外壳样式：设置页上那行入口，以及预览窗口里的工具条。
+ * 图片本身的样式在 iframe 里，跟这里互不影响。
+ * 颜色一律取控制台的 CSS 变量，跟着用户选的主题走，不写死明暗。
+ * 这份样式表会被整份克隆进预览窗口，两处共用（见 Launcher.tsx 的 prepare）。
+ */
+
+/* ── 设置页上的入口 ────────────────────────────────── */
+
+.qgl-launcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 2rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--k-color-border);
+  border-radius: 6px;
+  background: var(--k-side-bg);
+}
+
+.qgl-launcher-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--fg1);
+}
+
+.qgl-launcher-button {
+  padding: 0.25rem 0.85rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--k-color-active);
+  background: var(--page-bg);
+  border: 1px solid var(--k-color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.qgl-launcher-button:hover { border-color: var(--k-color-active); }
+
+.qgl-launcher-note {
+  flex: 1 1 12rem;
+  font-size: 0.8125rem;
+  color: var(--fg3);
+}
+
+/* ── 预览窗口 ──────────────────────────────────────── */
+
+/* 弹窗是我们自己的文档，正文直接铺满，不套控制台那层布局 */
+.qgl-popup {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--fg1);
+}
+.qgl-preview {
+  /* 工具条钉在顶上，图片再长也不用滚回去才能换标签页 */
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.qgl-preview-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--k-color-border);
+  background: var(--k-side-bg);
+}
+
+.qgl-preview-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.qgl-preview-tabs button {
+  padding: 0.25rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.qgl-preview-tabs button:hover { color: var(--fg1); }
+
+.qgl-preview-tabs button.active {
+  color: var(--k-color-active);
+  border-color: var(--k-color-border);
+  background: var(--page-bg);
+}
+
+.qgl-preview-note {
+  font-size: 0.8125rem;
+  color: var(--fg3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 缩放后的 iframe 仍占着原始尺寸，外面这层按缩放后的尺寸裁掉多出来的部分 */
+.qgl-preview-frame {
+  overflow: hidden;
+  margin: 0 auto;
+  background: var(--page-bg);
+}
+
+.qgl-preview-frame iframe {
+  display: block;
+  border: 0;
+  /* 预览是给人看的，不该抢走页面的滚动；高度由内容量出来，本来也不需要滚 */
+  pointer-events: none;
+}
+
+.qgl-preview-error {
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--k-color-danger);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
