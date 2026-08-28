@@ -2,7 +2,7 @@ import { Context, Element, Session, Universal } from 'koishi'
 import type { Config } from '../config'
 import { MessageRecord, TABLE } from '../database'
 import { logger } from '../logger'
-import { cleanContent, faceToken, mediaKind, mediaToken } from '../text'
+import { AT_ALL_NAME, atToken, cleanContent, faceToken, mediaKind, mediaToken } from '../text'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
@@ -27,10 +27,95 @@ const ELEMENT_MEDIA: Record<string, string> = {
 const src = (el: Element): string => String(el.attrs['src'] || el.attrs['url'] || '')
 
 /**
+ * 适配器挂在会话上的整份平台下发载荷（satori 的 setInternal），QQ 的形状是
+ * `{ t, d: { … } }`。别的平台对不上就是空对象，取什么都是 undefined——
+ * 这几段只在适配器漏了东西时兜底，不是主路径。
+ */
+function rawPayload(session: Session): { mentions?: unknown, attachments?: unknown } {
+  const event = session.event as { _data?: { d?: { mentions?: unknown, attachments?: unknown } } }
+  return event._data?.d ?? {}
+}
+
+/** 载荷里的提及列表。每项带 `id` 与 `username`——正是 at 元素上缺的那个名字 */
+function rawMentions(session: Session): { id?: string, username?: string }[] {
+  const list = rawPayload(session).mentions
+  return Array.isArray(list) ? list : []
+}
+
+/**
+ * 见过的人：`平台:用户 ID` → 昵称。
+ *
+ * QQ 的 at 元素上只有一个 openid，名字挂在同一份载荷的 mentions 列表里，
+ * 而那只覆盖当前这条消息。被引用的那条、转发卡片里的那几条，它们的 at
+ * 不在这份 mentions 里——只看当前载荷就只能落一个「某人」。
+ * 所以每见到一个名字就记下来，回头认得出是谁。
+ */
+type NameBook = Map<string, string>
+
+/** 记得住的人数上限。群成员再多也用不满，纯粹防着长期跑下来无限涨 */
+const NAME_BOOK_LIMIT = 2000
+
+function rememberName(book: NameBook, platform: string, id: string | undefined, name: string | undefined): void {
+  const trimmed = String(name ?? '').trim()
+  if (!id || !trimmed) return
+  // 先删再塞，让它排到队尾；满了先扔最久没露过面的那个
+  const key = `${platform}:${id}`
+  book.delete(key)
+  book.set(key, trimmed)
+  if (book.size > NAME_BOOK_LIMIT) book.delete(book.keys().next().value!)
+}
+
+/** bot 自己的昵称。取不到退成「机器人」——总比落一个「某人」认得出是谁 */
+function botName(session: Session): string {
+  return String(session.bot.user?.nick || session.bot.user?.name || '').trim() || '机器人'
+}
+
+/**
+ * 这条消息里的 at 元素该显示成谁。名字按四条来路依次找：
+ *
+ * 1. 元素自带的 `name`——别的平台的适配器会一并给上；
+ * 2. 这份载荷的 mentions 列表，按 id 对上；
+ * 3. 被 @ 的是 bot 自己——adapter-qq-crack 会把 bot 的 at 改写成 `selfId`，
+ *    而 mentions 里记的是 bot 的 openid，两边对不上，得单拎出来认；
+ * 4. 先前记下的名字（引用与转发里的 at 只能靠这条）。
+ *
+ * 四条都落空就返回空串，交给 `atToken` 兜底成「某人」。
+ */
+function mentionResolver(session: Session, book: NameBook): (el: Element) => string {
+  const names = new Map<string, string>()
+  for (const mention of rawMentions(session)) {
+    if (mention.id && mention.username) names.set(mention.id, mention.username)
+    rememberName(book, session.platform, mention.id, mention.username)
+  }
+  return (el) => {
+    // `type="all"` 是 satori 的写法；个别适配器把 id 直接写成 all
+    if (el.attrs['type'] === 'all' || el.attrs['id'] === 'all') return AT_ALL_NAME
+    const name = String(el.attrs['name'] ?? '').trim()
+    if (name) return name
+    const id = String(el.attrs['id'] ?? '')
+    if (!id) return ''
+    return names.get(id) ||
+      (id === session.selfId ? botName(session) : '') ||
+      book.get(`${session.platform}:${id}`) || ''
+  }
+}
+
+/**
+ * 序列化一条消息要用到的东西：配置，加上把 at 元素换成名字的解析器。
+ * 解析器得按会话现建（名字来自这条消息的载荷），不像 config 那样一处取就够。
+ */
+interface Serializer {
+  config: Config
+  /** at 元素 → 显示名，认不出是谁时返回空串 */
+  mention: (el: Element) => string
+}
+
+/**
  * 将消息元素序列化为纯文本。
  * 图片、视频、引用等非文本元素替换为占位符，是否留地址由配置决定。
  */
-function serializeNodes(nodes: Element[], config: Config, nested = false): string {
+function serializeNodes(nodes: Element[], serializer: Serializer, nested = false): string {
+  const { config } = serializer
   return nodes.map((el) => {
     if (el.type === 'text') {
       return el.attrs['content'] ?? ''
@@ -44,11 +129,15 @@ function serializeNodes(nodes: Element[], config: Config, nested = false): strin
       // 表情元素带的 name 就是 QQ 里显示的名字（「[安详]」之类）。
       // 落到下面的兜底分支只会存下一个 [emoji]，这句话说了什么就没了。
       return faceToken(String(el.attrs['name'] ?? '')) || '[表情]'
+    } else if (el.type === 'at') {
+      // 落到兜底分支就是一个光秃秃的 `[at]`：@ 的是谁没了，「@张三 你看看」
+      // 到了模型眼里成了「[at] 你看看」——一句话是冲谁说的，全靠这个名字
+      return atToken(serializer.mention(el))
     } else if (el.type === 'quote') {
       // 引用由 quotePreview 单独压成正文首行，这里跳过，免得同一条引用在正文里出现两次
       return ''
     } else if (nested && el.children?.length) {
-      return serializeNodes(el.children, config, true)
+      return serializeNodes(el.children, serializer, true)
     }
     return `[${el.type}]`
   }).join('')
@@ -94,7 +183,8 @@ function quoteAuthor(quote: Universal.Message): string {
  * 模型读到的一来一回也就接不上。被引用消息的正文挂在 session.quote 上，
  * 这里以它为准，拿不到时才退回引用元素自己的子节点。
  */
-function quotePreview(session: Session, config: Config): string {
+function quotePreview(session: Session, serializer: Serializer): string {
+  const { config } = serializer
   const quote = session.quote
   const element = (session.elements ?? []).find((el) => el.type === 'quote')
   if (!quote && !element) return ''
@@ -106,7 +196,7 @@ function quotePreview(session: Session, config: Config): string {
       ? Element.parse(quote.content)
       : element?.children ?? []
   // 预览只占一行，而被引用的正文未必只有一行（合并转发就是一整块），一律压平
-  const flat = cleanContent(serializeNodes(nodes, config, true), config.recordImages)
+  const flat = cleanContent(serializeNodes(nodes, serializer, true), config.recordImages)
     .replace(/\s+/g, ' ')
     .trim()
   // 按码位切，emoji 的代理对不会被劈成半个字
@@ -117,14 +207,9 @@ function quotePreview(session: Session, config: Config): string {
   return quoteToken(quote ? quoteAuthor(quote) : '', preview)
 }
 
-/**
- * 平台原始载荷里的附件列表。
- * 适配器把整份下发载荷挂在 session.event._data 上（satori 的 setInternal），
- * QQ 的形状是 `{ t, d: { attachments: [...] } }`。别的平台对不上就是空数组，
- * 什么也不会补——这段只在适配器漏了东西时兜底，不是主路径。
- */
+/** 平台原始载荷里的附件列表。对不上形状的平台就是空数组，什么也不会补 */
 function rawAttachments(session: Session): { content_type?: string, url?: string }[] {
-  const list = (session.event as { _data?: { d?: { attachments?: unknown } } })._data?.d?.attachments
+  const list = rawPayload(session).attachments
   return Array.isArray(list) ? list : []
 }
 
@@ -158,21 +243,22 @@ function droppedAttachments(session: Session, config: Config): string {
     .join('')
 }
 
-function buildRecord(session: Session, config: Config): MessageRecord {
+function buildRecord(session: Session, config: Config, book: NameBook): MessageRecord {
   const suffix = session.messageId ||
     `${session.selfId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const serializer: Serializer = { config, mention: mentionResolver(session, book) }
   const elements = session.elements ?? []
   // 没有元素时才退回 session.content：有元素的话它只是同一份内容的 XML 形态，
   // 里头的 <quote/> 标签原样落库就成了正文里的一段噪音
   const body = elements.length
-    ? cleanContent(serializeNodes(elements, config), config.recordImages)
+    ? cleanContent(serializeNodes(elements, serializer), config.recordImages)
     : cleanContent(session.content, config.recordImages)
   // 适配器漏掉的附件接在正文后面。正文是多行（压好的转发卡片）时另起一行——
   // 直接贴上去会挂到卡片最后一条记录的屁股上，像是那个人发的
   const dropped = droppedAttachments(session, config)
   const full = [body, dropped].filter(Boolean).join(body.includes('\n') ? '\n' : '')
   // 引用独占首行：正文可能好几行，混排在一起就分不清哪句是回的、哪句是说的
-  const content = [quotePreview(session, config), full].filter(Boolean).join('\n')
+  const content = [quotePreview(session, serializer), full].filter(Boolean).join('\n')
   return {
     id: `${session.platform}_${suffix}`,
     platform: session.platform,
@@ -200,12 +286,17 @@ export function applyMessageListener(ctx: Context, config: Config) {
   log.info(`消息监听已启动，范围: ${scope}`)
 
   let recorded = 0
+  // 认人用的名册跟着插件走：卸载即丢，不留跨实例的残留
+  const book: NameBook = new Map()
+
   ctx.on('message', async (session) => {
     if (!shouldRecord(session, config)) {
       log.debug(`跳过消息 ${session.platform}:${session.channelId} <- ${session.userId}`)
       return
     }
-    const record = buildRecord(session, config)
+    // 说过话的人，回头被 @ 时就认得出——QQ 的 at 元素上只有一个 openid
+    rememberName(book, session.platform, session.userId, session.username)
+    const record = buildRecord(session, config, book)
     if (!record.content) {
       // 一个字都没解析出来的消息不入库：空记录白占一条条数、把人均字数往下拉，
       // 投喂给模型的文本里还留一行没有内容的发言。

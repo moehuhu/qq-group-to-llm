@@ -134,7 +134,7 @@ body {
 
 /*
  * 两列排版走多列流：浏览器自己平衡两列高度。
- * 按分节硬分左右会失衡——高光记录的篇幅经常顶得上其余两节之和，
+ * 按分节硬分左右会失衡——高光对话的篇幅经常顶得上其余两节之和，
  * 那样左列会空掉一大半。
  */
 .columns {
@@ -440,6 +440,23 @@ body {
 .msg-quote-name::after { content: '\\ff1a'; font-weight: 400; }
 /* 引用条里的图片占位符跟着文字走：预览就一行，不该被撑成上下两截 */
 .msg-quote .msg-media { display: inline; margin: 0; line-height: inherit; }
+
+/*
+ * 消息里的提及：@某人 排成一枚淡靛标签，跟正文分开。
+ * 不写死字号——引用条、转发卡片、气泡三处正文的字号各不相同，
+ * 提及要跟着它落在的那一处走，写死了就会在小字里鼓出一块。
+ */
+.msg-at {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  /* 群名片可以很长，标签自己回绕，不去把气泡撑破 */
+  overflow-wrap: anywhere;
+}
 
 /* 消息里的合并转发：一张小卡片，一行一句，名字与正文分两列对齐 */
 /* 两列网格：名字一列、正文一列，整张卡片共用一套列宽，各行才对得齐 */

@@ -32,6 +32,18 @@ export function escapeHtml(value: string | undefined | null): string {
  */
 const MEDIA_PATTERN = /\[(图片|视频)\](?:\((https?:\/\/[^\s)]+)\))?/g
 
+/**
+ * 正文里的提及：`[@张三]`，认不出是谁时是 `[@某人]`。
+ * 名字连着 @ 一起包在方括号里（入库时就这么存的），边界才咬得死——
+ * 群里「@张三你看看」这种紧接着说下去的写法很常见，没有收尾的方括号就断不出名字。
+ */
+const MENTION_PATTERN = /\[@([^\][\n]*)\]/g
+
+/** 一次提及排成一枚淡靛标签：一眼看出这是冲谁说的，而不是正文里顺口打的一个 @ */
+function mentionTag(name: string): string {
+  return `<span class="msg-at">@${escapeHtml(name)}</span>`
+}
+
 /** 只放行 http(s)，别的协议一律当没有地址处理 */
 function safeImageUrl(url: string | undefined): string | undefined {
   if (!url) return undefined
@@ -138,7 +150,7 @@ function forwardCard(title: string, block: string): string {
     const nested = FORWARD_NESTED.exec(entry.content)
     const text = nested
       ? `<span class="msg-fwd-nested">${escapeHtml(nested[1])}` +
-        (nested[2] ? ` · ${nested[2]} 条` : '') + `</span>`
+      (nested[2] ? ` · ${nested[2]} 条` : '') + `</span>`
       : renderInline(entry.content)
     return `<span class="msg-fwd-name">${escapeHtml(entry.sender || '匿名')}</span>` +
       `<span class="msg-fwd-text">${text}</span>`
@@ -172,7 +184,25 @@ function renderBody(source: string): string {
   return renderInline(source.slice(0, forward.index)) + forwardCard(forward[1], forward[2])
 }
 
-/** 正文本体：转义文字，把图片占位符换成图片 */
+/**
+ * 一段纯文字：转义之外，把提及换成标签。
+ *
+ * 单开一趟扫提及、而不是并进下面那条媒体正则，是因为媒体占位符自成块级一行、
+ * 前后的空白是噪音要 trim 掉，提及却是行内的——`[@张三] 你好` 一并 trim
+ * 就成了「@张三你好」，把人家原本打的那个空格吃了。
+ */
+function renderText(text: string): string {
+  const out: string[] = []
+  let last = 0
+  for (const match of text.matchAll(MENTION_PATTERN)) {
+    out.push(escapeHtml(text.slice(last, match.index)), mentionTag(match[1]))
+    last = match.index + match[0].length
+  }
+  out.push(escapeHtml(text.slice(last)))
+  return out.join('')
+}
+
+/** 正文本体：转义文字，把图片占位符换成图片、把提及换成标签 */
 function renderInline(source: string): string {
   const out: string[] = []
   let images: string[] = []
@@ -190,7 +220,7 @@ function renderInline(source: string): string {
     const before = source.slice(last, match.index)
     if (before.trim()) {
       flushImages()
-      out.push(escapeHtml(before.trim()))
+      out.push(renderText(before.trim()))
     }
     images.push(mediaTag(match[1], match[2]))
     last = match.index + match[0].length
@@ -198,7 +228,7 @@ function renderInline(source: string): string {
   flushImages()
 
   const tail = source.slice(last)
-  if (tail.trim()) out.push(escapeHtml(tail.trim()))
+  if (tail.trim()) out.push(renderText(tail.trim()))
   return out.join('')
 }
 
@@ -241,7 +271,7 @@ function avatarTag(name: string, url: string | undefined, className: string): st
 /**
  * 一个分节。keep=true 表示不允许跨列拆开——
  * 排行榜拆了序号会断在两列，画像要点拆了会有孤立小节落在右列顶端、头上没有标题。
- * 篇幅可能很大的分节（高光记录）必须留着可拆，否则两列没法平衡。
+ * 篇幅可能很大的分节（高光对话）必须留着可拆，否则两列没法平衡。
  */
 const section = (title: string, inner: string, keep = false) =>
   `<div class="section${keep ? ' keep' : ''}"><div class="section-title">${title}</div>${inner}</div>`

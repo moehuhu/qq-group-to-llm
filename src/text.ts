@@ -182,6 +182,48 @@ export function mediaKind(mime: string | undefined): string {
   return '文件'
 }
 
+/** @全体成员。QQ 客户端上就显示这四个字，这里跟着叫，免得报告里冒出一个 `everyone` */
+export const AT_ALL_NAME = '全体成员'
+
+/** 认不出被 @ 的是谁时的兜底称呼 */
+const AT_UNKNOWN_NAME = '某人'
+
+/** 昵称的字数上限，与引用预览同理：名字占满一行就把话挤没了 */
+const AT_NAME_LIMIT = 24
+
+/** 会破掉 `[@昵称]` 这对方括号边界的字符 */
+const AT_NAME_BREAKERS = /[[\]\r\n]/g
+
+/**
+ * 一次提及：`[@张三]`。
+ *
+ * 名字**连着 @ 一起包在方括号里**，跟 `[引用 张三]` 是同一个道理——渲染那边要断得出边界。
+ * 只写 `@张三` 的话，遇上「@张三你看看」这种紧接着说下去的（群里最常见的写法）
+ * 就分不清哪一截是名字：@ 后面没有收尾符号，名字有多长全靠猜。
+ *
+ * 认不出是谁时退成 `[@某人]`，而不是把 ID 填进去：QQ 给的是三十多位的 openid，
+ * 摆在正文里既不是人话，出图时还能撑破一行；而且它和记录里的昵称对不上，
+ * 模型拿它也接不到任何一个人身上，纯是白烧 token。
+ */
+export function atToken(name: string | undefined | null): string {
+  const trimmed = String(name ?? '').replace(AT_NAME_BREAKERS, ' ').trim()
+  return `[@${trimmed.slice(0, AT_NAME_LIMIT).trim() || AT_UNKNOWN_NAME}]`
+}
+
+/**
+ * 历史记录里的 `[at]`。
+ *
+ * at 元素早先没人认，落到序列化的兜底分支里，存下来就只剩一个元素类型名——
+ * 提的是谁没了不说，`[at]` 这三个字母混在中文正文里，模型也读不出它是一次提及。
+ * 读取时就地换成统一的形态，历史记录跟着一起对齐（新记录走的是 `atToken`，
+ * 这里再跑一遍是空转）。
+ *
+ * 两侧贴着字母、数字、点号时不认：`zhang[at]qq.com` 是群里躲爬虫的邮箱写法，
+ * 不是一次提及，换掉就把人家的邮箱改了。真正的提及总是独立成词——
+ * 后面跟着空格或中文，前面要么是行首、要么是另一个 `[at]`。
+ */
+const LEGACY_AT = /(?<![\w.-])\[at\](?![\w.-])/g
+
 /** 发送者昵称的字数上限，与引用预览同理：名字占满一行就把话挤没了 */
 const FORWARD_NAME_LIMIT = 24
 
@@ -339,5 +381,5 @@ export function normalizeForward(text: string | undefined | null, images = true)
  * 入库与读取两头都走这一条，历史记录读出来就地跟上，渲染和提示词不必各处理一遍。
  */
 export function cleanContent(text: string | undefined | null, images = true): string {
-  return normalizeForward(decodePlatformMarkup(text), images)
+  return normalizeForward(decodePlatformMarkup(text), images).replace(LEGACY_AT, atToken(''))
 }
