@@ -177,6 +177,19 @@ export class LLMService extends Service {
     let buffer = ''
     let firstChunkAt = 0
 
+    // 每秒输出一次进度：当前已输出字数 + 输出速度（字/秒）
+    let chars = 0
+    let speedBaseAt = startedAt
+    let speedBaseChars = 0
+    const progress = setInterval(() => {
+      const now = Date.now()
+      const elapsed = now - speedBaseAt
+      const speed = elapsed > 0 ? (chars - speedBaseChars) / (elapsed / 1000) : 0
+      this.log.info(`[${task}] 流式进度：已输出 ${chars} 字，速度 ${speed.toFixed(1)} 字/秒`)
+      speedBaseAt = now
+      speedBaseChars = chars
+    }, 1000)
+
     try {
       for (;;) {
         const { done, value } = await reader.read()
@@ -210,11 +223,13 @@ export class LLMService extends Service {
               this.log.debug(`[${task}] 首个分片到达，耗时 ${firstChunkAt - startedAt}ms`)
             }
             parts.push(delta)
+            chars += delta.length
           }
           if (chunk?.usage) usage = chunk.usage
         }
       }
     } finally {
+      clearInterval(progress)
       reader.cancel().catch(() => {})
     }
 
