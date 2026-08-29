@@ -5,7 +5,7 @@
  * - 列表前若是普通文本，必须用空行隔开，否则无法被识别
  * - 单条 markdown 消息建议不超过 2000 字符
  */
-import type { DialogueDigest, GroupAnalysisResult, QueryAnswerResult, ResolvedHighlightLine, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightLine, QueryAnswerResult, UserPersonaProfile } from '../types'
 import { escapeMarkdown } from '../markdown'
 
 const toArray = (value: unknown): string[] =>
@@ -85,7 +85,7 @@ export function renderReport(result: GroupAnalysisResult): string {
 }
 
 /** 把高光对话渲染为 markdown 文本 */
-export function renderDialogues(digest: DialogueDigest<ResolvedHighlightLine>): string {
+export function renderDialogues(digest: DialogueDigest<HighlightLine>): string {
   const lines: string[] = []
   lines.push(`# 🧊 高光对话`)
   lines.push('')

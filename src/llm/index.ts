@@ -362,12 +362,16 @@ export class LLMService extends Service {
     }))
   }
 
-  /** 截取带学术要素的冷幽默对话片段，模型认为没有符合条件的片段时返回空数组 */
+  /**
+   * 截取带学术要素的冷幽默对话片段。
+   * 模型直接返回每轮的发送者昵称与发言原文，原文不再按 id 回查。
+   * 模型认为没有符合条件的片段时返回空数组。
+   */
   async analyzeHighlightDialogues(
     messages: string,
     context: AnalysisContext,
-  ): Promise<Omit<HighlightDialogue, 'kind'>[]> {
-    return this.chatYaml<Omit<HighlightDialogue, 'kind'>>('highlightDialogues', fill(this.config.promptHighlightDialogues, {
+  ): Promise<HighlightDialogue[]> {
+    return this.chatYaml<HighlightDialogue>('highlightDialogues', fill(this.config.promptHighlightDialogues, {
       ...context,
       messages,
       maxHighlightDialogues: String(this.config.maxHighlightDialogues),

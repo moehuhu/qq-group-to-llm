@@ -2,7 +2,7 @@ import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
-import { analyzeDialogues, fetchMessages, resolveDialogueDigest } from '../analysis'
+import { analyzeDialogues, fetchMessages } from '../analysis'
 import { resolveTarget } from './target'
 import { renderDialoguesHtml, renderHtmlToImage } from '../render'
 import type { DialogueDigest } from '../types'
@@ -20,16 +20,15 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
 
   /**
    * 优先出图，puppeteer 不可用、渲染失败或发送被拒时都不回退为 markdown，而是直接提示。
-   * 抽取结果只存 msgid，渲染前先按 msgid 从库里回查原文，保证白纸黑字跟原话一字不差。
+   * 抽取结果已含昵称与原文，直接渲染即可。
    */
   const send = async (session: Session, digest: DialogueDigest) => {
-    const resolved = await resolveDialogueDigest(ctx, config, digest)
-    if (!resolved.dialogues.length) {
-      log.info(`高光对话 msgid 回查全部落空（历史记录可能已被清理）`)
+    if (!digest.dialogues.length) {
+      log.info(`高光对话没有可展示的片段`)
       return '没有找到可展示的高光对话。'
     }
     const image = await renderHtmlToImage(
-      ctx, config, renderDialoguesHtml(resolved, config), '高光对话',
+      ctx, config, renderDialoguesHtml(digest, config), '高光对话',
     )
     if (!image) return '图片渲染失败，请稍后重试。'
     try {
