@@ -10,6 +10,11 @@ export interface SummaryTopic {
   topic: string
   contributors?: string[]
   detail?: string
+  /**
+   * 支撑该话题的原话记录。仅用于防止模型张冠李戴，只作内部依据，
+   * 渲染层不读取该字段，不会展示在结果里。
+   */
+  messages?: string[]
 }
 
 /** 一条「金句」：单句成立的精彩发言，随群分析报告一起产出 */
