@@ -33,7 +33,9 @@ export function apply(ctx: Context, config: Config) {
     `${item.id}（${item.model} @ ${item.endpoint}）`).join('、') : '（未配置，分析类命令不可用）'}`)
   log.info(`任务分工 | 话题=${config.llmModelTopic} 金句=${config.llmModelGoldenQuotes} ` +
     `高光=${config.llmModelHighlightDialogues} 问答=${config.llmModelQuery} 画像=${config.llmModelUserPersona}` +
-    `，并发上限 ${config.llmConcurrency}，${config.llmStream ? '流式' : '非流式'}，重试 ${config.llmRetries} 次`)
+    `，${config.llmStream ? '流式' : '非流式'}，重试 ${config.llmRetries} 次`)
+  log.info(`模型并发 | ${config.llmModels.length ? config.llmModels.map((item) =>
+    `${item.id}=${item.concurrency}`).join('、') : '（未配置）'}`)
   log.info(`时区 | ${config.timezone || '跟随系统'}（当前 ${
     createTimeFormatter(config.timezone).dateTime(new Date())}）`)
   log.info(`结果出口 | ${config.renderImage

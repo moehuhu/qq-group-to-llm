@@ -42,18 +42,19 @@ export class LLMService extends Service {
 
   private readonly log: ReturnType<typeof logger>
 
-  /** 当前在飞的请求数 */
-  private active = 0
-  /** 等待名额的请求，先到先得 */
-  private waiting: Array<() => void> = []
+  /** 各模型当前在飞的请求数 */
+  private readonly active = new Map<string, number>()
+  /** 各模型等待名额的请求，先到先得 */
+  private readonly waiting = new Map<string, Array<() => void>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'qqGroupLlm', true)
     this.log = logger(ctx)
   }
 
-  private get limit(): number {
-    return Math.max(1, this.config.llmConcurrency)
+  /** 某模型的并发上限：取自命名模型自己的配置 */
+  private limitOf(model: LLMModelConfig): number {
+    return Math.max(1, model.concurrency)
   }
 
   /**
@@ -75,35 +76,51 @@ export class LLMService extends Service {
     return fallback
   }
 
-  /** 取一个并发名额，名额满了就排队等 */
-  private async acquire(name: string): Promise<void> {
-    if (this.active < this.limit) {
-      this.active++
+  /**
+   * 取一个并发名额，名额满了就排队等。
+   * 每个模型各有一道独立闸门，配额互不相干：
+   * 一个模型在排队不会占掉另一个模型的在飞数，各自只受各自的上限约束。
+   */
+  private async acquire(model: LLMModelConfig, name: string): Promise<void> {
+    const limit = this.limitOf(model)
+    const active = this.active.get(model.id) ?? 0
+    if (active < limit) {
+      this.active.set(model.id, active + 1)
       return
     }
-    this.log.info(`[${name}] 已有 ${this.active} 个请求在飞（上限 ${this.limit}），排队等待`)
-    await new Promise<void>((resolve) => this.waiting.push(resolve))
+    this.log.info(`[${name}] 模型「${model.id}」已有 ${active} 个请求在飞（上限 ${limit}），排队等待`)
+    let queue = this.waiting.get(model.id)
+    if (!queue) {
+      queue = []
+      this.waiting.set(model.id, queue)
+    }
+    await new Promise<void>((resolve) => queue.push(resolve))
     // 名额由 release 直接转交，这里不再自增，否则会超发
   }
 
   /** 交还名额：有人在等就直接把名额转给他，避免中间出现空档被别人抢走 */
-  private release(): void {
-    const next = this.waiting.shift()
+  private release(model: LLMModelConfig): void {
+    const queue = this.waiting.get(model.id)
+    const next = queue?.shift()
     if (next) next()
-    else this.active--
+    else {
+      const active = (this.active.get(model.id) ?? 1) - 1
+      if (active > 0) this.active.set(model.id, active)
+      else this.active.delete(model.id)
+    }
   }
 
   /**
    * 并发闸门。接口扛不住太多并发请求，同时打过去会失败，
-   * 因此在飞数量始终不超过 llmConcurrency。
+   * 因此各模型在飞数量始终不超过该模型配置里的 concurrency。
    * release 放在 finally 里：请求失败也必须还名额，否则会把后面的全饿死。
    */
-  private async enqueue<T>(task: () => Promise<T>, name: string): Promise<T> {
-    await this.acquire(name)
+  private async enqueue<T>(model: LLMModelConfig, task: () => Promise<T>, name: string): Promise<T> {
+    await this.acquire(model, name)
     try {
       return await task()
     } finally {
-      this.release()
+      this.release(model)
     }
   }
 
@@ -111,7 +128,7 @@ export class LLMService extends Service {
   private chat(taskId: LLMTaskId, prompt: string): Promise<string> {
     const task = TASK_NAMES[taskId]
     const model = this.resolveModel(taskId)
-    return this.enqueue(() => this.requestWithRetry(model, prompt, task), task)
+    return this.enqueue(model, () => this.requestWithRetry(model, prompt, task), task)
   }
 
   /**

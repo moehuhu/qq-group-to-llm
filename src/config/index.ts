@@ -20,6 +20,8 @@ export interface LLMModelConfig {
   model: string
   /** 采样温度 */
   temperature: number
+  /** 该模型同时在飞的请求数上限 */
+  concurrency: number
 }
 
 export interface Config {
@@ -38,8 +40,6 @@ export interface Config {
 
   /** 命名模型列表，各任务从这里按 id 选用模型 */
   llmModels: LLMModelConfig[]
-  /** 同时在飞的模型请求数上限 */
-  llmConcurrency: number
   /** 以流式方式接收模型响应 */
   llmStream: boolean
   /** 请求失败后的重试次数 */
@@ -131,8 +131,6 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('消息记录'),
 
   Schema.object({
-    llmConcurrency: Schema.number().default(2).min(1).max(5).step(1)
-      .description('同时进行的模型调用数上限，超出的排队等待。调大可能触发厂商的并发限制导致调用失败'),
     llmStream: Schema.boolean().default(true)
       .description('以流式方式接收响应。关闭后服务端要等整段生成完才回响应头，提示词一长就容易超时失败（UND_ERR_HEADERS_TIMEOUT）'),
     llmRetries: Schema.number().default(2).min(0).max(5).step(1)
@@ -143,6 +141,8 @@ export const Config: Schema<Config> = Schema.intersect([
       apiKey: Schema.string().required().role('secret').description('API Key'),
       model: Schema.string().required().description('模型名称'),
       temperature: Schema.number().default(1).min(0).max(2).step(0.1).description('采样温度'),
+      concurrency: Schema.number().default(2).min(1).max(5).step(1)
+        .description('该模型同时在飞的请求数上限，超出的排队等待。不同厂商对并发的限制不一样，想提高某模型的利用率就在这里单独调大'),
     }).description('一个命名模型'))
       .required()
       .role('table')
