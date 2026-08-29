@@ -147,7 +147,7 @@ export function renderQueryAnswer(result: QueryAnswerResult): string {
   if (result.cited?.length) {
     lines.push('', `**📌 依据的聊天记录原文**`)
     for (const quote of result.cited) {
-      lines.push(`> ${escapeMarkdown(quote)}`)
+      lines.push(`> **${escapeMarkdown(quote.sender)}**（${escapeMarkdown(quote.time)}）：${escapeMarkdown(quote.content)}`)
     }
   }
 

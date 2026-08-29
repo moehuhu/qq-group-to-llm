@@ -64,11 +64,21 @@ export interface QueryAnswer {
   cited?: string[]
 }
 
-/** 「群聊问答」的最终产物：回答 + 回查成功的引用消息原文，供渲染层直接展示 */
+/** 「群聊问答」的最终产物：回答 + 回查成功的引用消息，供渲染层直接展示 */
 export interface QueryAnswerResult {
   answer: string
-  /** 回答所依据的消息原文，按模型引用的顺序，回查失败的已剔除 */
-  cited: string[]
+  /** 回答所依据的消息（含发言者与时间），按模型引用的顺序，回查失败的已剔除 */
+  cited: CitedMessage[]
+}
+
+/** 一条被引用的原始消息，供「群聊问答」附在回答后核对 */
+export interface CitedMessage {
+  /** 发言人昵称，缺省退回用户 ID */
+  sender: string
+  /** 发言时间，按配置时区格式化 */
+  time: string
+  /** 清洗后的消息正文 */
+  content: string
 }
 
 export interface UserStats {
