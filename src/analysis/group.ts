@@ -8,12 +8,12 @@ import { layoutRecord } from '../transcript'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
-  CitedMessage,
   DialogueDigest,
   GoldenQuote,
   HighlightDialogue,
   HighlightLine,
   GroupAnalysisResult,
+  MessageQuote,
   QueryAnswerResult,
   SummaryTopic,
 } from '../types'
@@ -66,51 +66,6 @@ export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter):
     `[${time.time(message.timestamp)}] ${message.username || message.userId}: `,
     message.content,
   )).join('\n')
-}
-
-/**
- * 带 <msgid:…> 锚点渲染，供模型在引用中标识消息。
- * 锚点只在行首出现一次，所以多行正文的续行必须缩进——
- * 否则锚点会被算到它后面那几行头上，引用的原文就对不上了。
- * 问答需要回查引用原文，故这里与 persona 的排法一致。
- */
-export function formatForQueryPrompt(messages: MessageRecord[], time: TimeFormatter): string {
-  return messages.map((message) => {
-    const anchor = message.messageId || message.id
-    return layoutRecord(
-      `[${time.time(message.timestamp)}] ${message.username || message.userId}: <msgid:${anchor}> `,
-      message.content,
-    )
-  }).join('\n')
-}
-
-/**
- * 按 messageId（缺省退到记录主键）在已投喂的消息里回查引用消息，保持引用顺序。
- * 只在 messages（本次问答实际投喂的记录）内回查：模型能引用的只有它看到过的消息，
- * 命不中的（编造的、或库里其他消息的 id）一律丢弃，杜绝引到别处的原文。
- * 消息在 fetchMessages 时已清洗过，这里直接用。
- */
-export function resolveCitedMessages(
-  messages: MessageRecord[],
-  cited: string[],
-  time: TimeFormatter,
-): CitedMessage[] {
-  const ids = [...new Set(cited.map((item) => item.replace(/^msgid:/, '').trim()).filter(Boolean))]
-  if (!ids.length) return []
-
-  const byId = new Map<string, MessageRecord>()
-  for (const record of messages) {
-    byId.set(record.messageId || record.id, record)
-    byId.set(record.id, record)
-  }
-  return ids
-    .map((id) => byId.get(id))
-    .filter((record): record is MessageRecord => !!record?.content)
-    .map((record) => ({
-      sender: record.username || record.userId || '匿名',
-      time: time.time(record.timestamp),
-      content: record.content,
-    }))
 }
 
 /** 把模型返回的条目压成一句可读的摘要，日志里用它指出具体丢的是哪一条 */
@@ -358,25 +313,11 @@ export async function answerQuery(
   log.info(`群聊问答: ${context.groupName} 基于 ${usable.length} 条消息，问题「${query}」` +
     (messages.length !== usable.length ? `（屏蔽了 ${messages.length - usable.length} 条）` : ''))
 
-  const outcome = await ctx.qqGroupLlm.answerQuery(formatForQueryPrompt(usable, time), context)
-  const quoted = outcome.cited ?? []
-  const quotedIds = [...new Set(quoted.map((item) => item.replace(/^msgid:/, '').trim()).filter(Boolean))]
-  const quotes = resolveCitedMessages(usable, quoted, time)
-  if (quotedIds.length) {
-    // 找出回查落空的 msgid（编造的、或库里其他消息的 id），逐条指出具体是哪个
-    const byId = new Map<string, boolean>()
-    for (const record of usable) {
-      byId.set(record.messageId || record.id, true)
-      byId.set(record.id, true)
-    }
-    const miss = quotedIds.filter((id) => !byId.get(id))
-    if (miss.length) {
-      log.warn(`群聊问答: 丢弃 ${miss.length}/${quotedIds.length} 个引用 msgid（回查落空，可能是编造的 id）: ${miss.join(', ')}`)
-    }
-  }
+  const outcome = await ctx.qqGroupLlm.answerQuery(formatForPrompt(usable, time), context)
+  const cited: MessageQuote[] = outcome.cited ?? []
 
   return {
     answer: outcome.answer,
-    cited: quotes,
+    cited,
   }
 }

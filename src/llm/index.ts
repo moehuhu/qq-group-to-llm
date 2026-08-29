@@ -7,10 +7,6 @@ import {
   describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairYaml,
 } from './prompt'
 
-/** 把模型返回的任意字段规整成字符串数组，空值与非数组一律兜底为空数组 */
-const toArray = (value: unknown): string[] =>
-  Array.isArray(value) ? value.map(String).filter(Boolean) : []
-
 /** 插件提供的所有 LLM 任务 */
 export type LLMTaskId =
   | 'topic'
@@ -403,7 +399,7 @@ export class LLMService extends Service {
     return { ...profile, userId: input.userId, username: input.username }
   }
 
-  /** 自然语言问答。返回回答与所引用的消息 id，供调用方回查原文展示 */
+  /** 自然语言问答。返回回答与所引用的消息（发送者 + 原文），供调用方直接展示 */
   async answerQuery(messages: string, context: AnalysisContext): Promise<QueryAnswer> {
     const results = await this.chatYaml<QueryAnswer>('query', fill(this.config.promptQuery, { ...context, messages }))
     const result = results[0]
@@ -411,7 +407,14 @@ export class LLMService extends Service {
       this.log.warn('[群聊问答] 结果缺少 answer 字段，视为无效')
       return { answer: '' }
     }
-    return { answer: result.answer, cited: toArray(result.cited) }
+    // 引用消息由模型直接照抄发送者与原文，缺 sender 或 content 的直接剔除
+    const cited = (Array.isArray(result.cited) ? result.cited : [])
+      .map((item) => ({
+        sender: String(item?.sender ?? '').trim(),
+        content: String(item?.content ?? '').trim(),
+      }))
+      .filter((item) => item.sender && item.content)
+    return { answer: result.answer, cited }
   }
 }
 

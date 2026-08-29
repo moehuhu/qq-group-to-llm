@@ -57,16 +57,15 @@ async function collectMessages(
 }
 
 /**
- * 带 <msgid:…> 锚点渲染，供模型在 evidence 中引用。
- * 锚点只在行首出现一次，所以多行正文的续行必须缩进——
- * 否则锚点会被算到它后面那几行头上，evidence 引用的原文就对不上了。
+ * 渲染成投喂给 LLM 的对话文本。模型直接从行首读取发送者与原文，
+ * 无需 <msgid:…> 锚点——evidence 由模型照抄昵称与原文。
+ * 锚点只在行首出现一次，所以多行正文的续行必须缩进。
  */
 function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
   return messages.map((message) => {
     const scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
-    const anchor = message.messageId || message.id
     return layoutRecord(
-      `[${time.dateTime(message.timestamp)}] ${scope} <msgid:${anchor}> `,
+      `[${time.dateTime(message.timestamp)}] ${scope} ${message.username || message.userId}: `,
       message.content,
     )
   }).join('\n')
@@ -166,18 +165,21 @@ export async function resolvePersona(
     }
   }
 
-  // 丢弃模型编造的 msgid，只保留真实存在的引用
-  const known = new Map(messages.map((message) => [message.messageId || message.id, message]))
-  const claimed = toArray(generated.evidence).map((item) => item.replace(/^msgid:/, '').trim())
-  const evidence = claimed.filter((item) => known.has(item))
-  const fabricated = claimed.filter((item) => !known.has(item))
-  if (fabricated.length) {
-    log.warn(`${id} 的画像引用了 ${fabricated.length} 个不存在的 msgid，已丢弃: ${fabricated.join(', ')}`)
+  // 丢弃缺 sender 或 content 的引用，只保留能展示的（发送者 + 原文）
+  const rawEvidence = Array.isArray(generated.evidence) ? generated.evidence : []
+  const evidence = rawEvidence
+    .map((item) => ({
+      sender: String(item?.sender ?? '').trim(),
+      content: String(item?.content ?? '').trim(),
+    }))
+    .filter((item) => item.sender && item.content)
+  if (evidence.length < rawEvidence.length) {
+    log.warn(`${id} 的画像有 ${rawEvidence.length - evidence.length} 条证据缺 sender 或 content，已丢弃`)
   }
 
   const profile: UserPersonaProfile = { ...generated, evidence }
   log.debug(`${id} 本次画像: 特质 ${toArray(profile.keyTraits).length} 项 / ` +
-    `兴趣 ${toArray(profile.interests).length} 项 / 证据 ${evidence.length}/${claimed.length} 条`)
+    `兴趣 ${toArray(profile.interests).length} 项 / 证据 ${evidence.length}/${rawEvidence.length} 条`)
 
   // 本次没抓到头像时依次回退到记录里的、库里的旧值，不要把已有的抹掉
   const avatar = target.avatar || recordedAvatar || record?.avatar || ''
@@ -196,33 +198,4 @@ export async function resolvePersona(
   log.info(`用户画像 ${id} 已更新（完全由本次发言生成，未参考已存结论），` +
     `基于 ${messages.length} 条发言，总耗时 ${Date.now() - startedAt}ms`)
   return { persona: profile, avatar, cached: false, messageCount: messages.length }
-}
-
-/** 把 evidence 中的 messageId 回查成原文 */
-export async function resolveEvidence(
-  ctx: Context,
-  config: Config,
-  persona: UserPersonaProfile,
-  limit = 5,
-): Promise<string[]> {
-  const log = logger(ctx)
-  const ids = toArray(persona.evidence).slice(0, limit)
-  if (!ids.length) return []
-
-  const records = await ctx.database
-    .select(TABLE)
-    .where({ $or: [{ messageId: { $in: ids } }, { id: { $in: ids } }] })
-    .execute()
-
-  const byId = new Map<string, MessageRecord>()
-  for (const record of records) {
-    byId.set(record.messageId || record.id, record)
-    byId.set(record.id, record)
-  }
-  const quotes = ids.map((id) => byId.get(id)?.content)
-    .filter(Boolean).map((content) => cleanContent(content, config.recordImages)) as string[]
-  if (quotes.length < ids.length) {
-    log.debug(`证据回查: ${ids.length} 个 msgid 命中 ${quotes.length} 条原文，其余已被清理或删除`)
-  }
-  return quotes
 }

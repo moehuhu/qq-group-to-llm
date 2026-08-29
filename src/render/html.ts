@@ -8,7 +8,7 @@
  * ——markdown 那条出口不受影响，emoji 由聊天客户端自己渲染，那边照旧用。
  * 用户内容里的 emoji 是数据，原样透传，这条只约束模板自己写死的字符。
  */
-import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, HighlightLine, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, HighlightLine, MessageQuote, UserPersonaProfile } from '../types'
 import {
   DIALOGUES_THEME, PERSONA_THEME, REPORT_THEME,
   resolveDocument, type RenderStyleConfig,
@@ -456,7 +456,7 @@ export function renderDialoguesHtml(digest: DialogueDigest<HighlightLine>, confi
 /** 用户画像 → HTML */
 export function renderPersonaHtml(
   persona: UserPersonaProfile,
-  evidence: string[],
+  evidence: MessageQuote[],
   avatar: string | undefined,
   config: RenderStyleConfig,
 ): string {
@@ -492,7 +492,7 @@ export function renderPersonaHtml(
 
   const evidenceHtml = evidence.length
     ? section('代表发言',
-      evidence.map((quote) => `<div class="evidence">${renderMessageContent(quote)}</div>`).join(''))
+      evidence.map((quote) => `<div class="evidence"><span class="evidence-sender">${escapeHtml(quote.sender || '匿名')}：</span>${renderMessageContent(quote.content)}</div>`).join(''))
     : ''
 
   return resolveDocument(config, PERSONA_THEME(config), {

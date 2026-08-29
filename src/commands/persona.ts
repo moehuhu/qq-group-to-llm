@@ -1,7 +1,7 @@
 import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
-import { resolveEvidence, resolvePersona } from '../analysis'
+import { resolvePersona } from '../analysis'
 import { renderHtmlToImage, renderPersonaHtml } from '../render'
 
 /**
@@ -65,7 +65,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
           return outcome.reason ? `无法生成画像：${outcome.reason}。` : '无法生成画像。'
         }
 
-        const evidence = await resolveEvidence(ctx, config, persona)
+        const evidence = persona.evidence
         const note = outcome.cached
           ? outcome.reason
             ? `（${outcome.reason}，展示的是此前的画像）`

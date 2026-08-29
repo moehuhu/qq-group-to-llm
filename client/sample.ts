@@ -8,10 +8,10 @@
  * 样本刻意把这些都塞了进来：引用条、提及、图片、合并转发、多人排行榜、
  * 深夜与峰值都有的柱状图，这样调样式时不至于漏掉某一块。
  *
- * 高光对话的样本是「已回查原文」的形态（msgid 已被替换成正文与头像），
+ * 高光对话的样本是「已带发送者与原文」的形态，
  * 与真正出图前的那一步对齐——预览只关心版面，不关心回查。
  */
-import type { DialogueDigest, GroupAnalysisResult, ResolvedHighlightLine, UserPersonaProfile } from '../src/types'
+import type { DialogueDigest, GroupAnalysisResult, MessageQuote, ResolvedHighlightLine, UserPersonaProfile } from '../src/types'
 
 /** 一条什么都占齐的消息：引用 + 提及 + 图片 + 合并转发 */
 const RICH_MESSAGE = [
@@ -77,6 +77,11 @@ export const SAMPLE_DIALOGUES: DialogueDigest<ResolvedHighlightLine> = {
   ],
 }
 
+export const SAMPLE_EVIDENCE: MessageQuote[] = [
+  { sender: '张三', content: RICH_MESSAGE },
+  { sender: '张三', content: '这个方案我同意，先按这个来' },
+]
+
 export const SAMPLE_PERSONA: UserPersonaProfile = {
   userId: '10001',
   username: '张三',
@@ -84,7 +89,5 @@ export const SAMPLE_PERSONA: UserPersonaProfile = {
   keyTraits: ['务实', '耐心', '较真'],
   interests: ['前端工程', '排版', '摄影'],
   communicationStyle: '短句为主，少用语气词，结论先行',
-  evidence: [],
+  evidence: SAMPLE_EVIDENCE,
 }
-
-export const SAMPLE_EVIDENCE = [RICH_MESSAGE, '这个方案我同意，先按这个来']

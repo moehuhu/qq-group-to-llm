@@ -5,7 +5,7 @@
  * - 列表前若是普通文本，必须用空行隔开，否则无法被识别
  * - 单条 markdown 消息建议不超过 2000 字符
  */
-import type { DialogueDigest, GroupAnalysisResult, HighlightLine, QueryAnswerResult, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightLine, MessageQuote, QueryAnswerResult, UserPersonaProfile } from '../types'
 import { escapeMarkdown } from '../markdown'
 
 const toArray = (value: unknown): string[] =>
@@ -108,7 +108,7 @@ export function renderDialogues(digest: DialogueDigest<HighlightLine>): string {
 }
 
 /** 把画像渲染为 markdown 文本 */
-export function renderPersona(persona: UserPersonaProfile, evidenceText: string[] = []): string {
+export function renderPersona(persona: UserPersonaProfile, evidence: MessageQuote[] = []): string {
   const lines: string[] = []
   lines.push(`# 🪞 用户画像 · ${escapeMarkdown(persona.username || persona.userId)}`)
   lines.push('')
@@ -125,10 +125,10 @@ export function renderPersona(persona: UserPersonaProfile, evidenceText: string[
     lines.push(`**🗣 表达风格：** ${escapeMarkdown(persona.communicationStyle.trim())}`)
   }
 
-  if (evidenceText.length) {
+  if (evidence.length) {
     lines.push('', '**📌 代表发言**')
-    for (const quote of evidenceText) {
-      lines.push(`> ${escapeMarkdown(quote)}`)
+    for (const quote of evidence) {
+      lines.push(`> **${escapeMarkdown(quote.sender || '匿名')}：**${escapeMarkdown(quote.content)}`)
     }
   }
 
@@ -138,7 +138,7 @@ export function renderPersona(persona: UserPersonaProfile, evidenceText: string[
 
 /**
  * 把问答渲染为 markdown。
- * cited 仍会被回查核对（用于告警模型编造的 id），但按需求不展示引用来源，只输出回答正文。
+ * 引用消息由模型直接返回发送者与原文，但按需求不展示引用来源，只输出回答正文。
  */
 export function renderQueryAnswer(result: QueryAnswerResult): string {
   const lines: string[] = []

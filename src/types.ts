@@ -71,31 +71,29 @@ export interface DialogueDigest<L = HighlightLine> {
   dialogues: HighlightDialogue<L>[]
 }
 
+/** 一条被引用的消息：发送者 + 原文，由模型直接从聊天记录照抄 */
+export interface MessageQuote {
+  /** 发言人昵称 */
+  sender: string
+  /** 发言原文（模型从群聊记录里照抄，不做回查校验） */
+  content: string
+}
+
 /**
  * LLM 问答的原始返回。answer 是给用户看的回答，
- * cited 是回答所依据的消息 id，回查原文后随回答一起展示，防止张冠李戴。
+ * cited 是回答所依据的消息（发送者 + 原文），随回答一起交给渲染层。
  */
 export interface QueryAnswer {
   answer: string
-  /** 引用的消息 id（<msgid:…> 锚点），可能混有模型编造的，回查时丢弃 */
-  cited?: string[]
+  /** 回答所依据的引用消息（发送者 + 原文），可能混有模型编造的，展示时自行取舍 */
+  cited?: MessageQuote[]
 }
 
-/** 「群聊问答」的最终产物：回答 + 回查成功的引用消息，供渲染层直接展示 */
+/** 「群聊问答」的最终产物：回答 + 引用消息，供渲染层直接展示 */
 export interface QueryAnswerResult {
   answer: string
-  /** 回答所依据的消息（含发言者与时间），按模型引用的顺序，回查失败的已剔除 */
-  cited: CitedMessage[]
-}
-
-/** 一条被引用的原始消息，供「群聊问答」附在回答后核对 */
-export interface CitedMessage {
-  /** 发言人昵称，缺省退回用户 ID */
-  sender: string
-  /** 发言时间，按配置时区格式化 */
-  time: string
-  /** 清洗后的消息正文 */
-  content: string
+  /** 回答所依据的消息（发送者 + 原文），按模型引用的顺序 */
+  cited: MessageQuote[]
 }
 
 export interface UserStats {
@@ -141,6 +139,6 @@ export interface UserPersonaProfile {
   interests: string[]
   /** 表达风格与情绪倾向 */
   communicationStyle: string
-  /** 支撑结论的原话，存 messageId；渲染时回查原文 */
-  evidence: string[]
+  /** 支撑结论的原话（发送者 + 原文），由模型直接从聊天记录照抄 */
+  evidence: MessageQuote[]
 }
