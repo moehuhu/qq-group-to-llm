@@ -60,10 +60,15 @@ export function excludeUsers(messages: MessageRecord[], blocked: string[]): Mess
  * 把消息渲染成投喂给 LLM 的文本，一条记录一段，行首是时间与发言人。
  * 正文本身可能是多行的（合并转发的「群聊的聊天记录」就是一整块），
  * 续行由 layoutRecord 缩进，免得被当成另一个人的发言。
+ *
+ * withAvatar 为 true 时，行首在昵称后附 `[头像 地址]` 标记，
+ * 供模型把地址原样照抄进返回结果（高光对话出图用）。头像可能为空，
+ * 那种情况不带标记，模型在 avatar 字段留空即可。
  */
-export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
+export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter, withAvatar = false): string {
   return messages.map((message) => layoutRecord(
-    `[${time.time(message.timestamp)}] ${message.username || message.userId}: `,
+    `[${time.time(message.timestamp)}] ${message.username || message.userId}` +
+    (withAvatar && message.avatar ? ` [头像 ${message.avatar}]` : '') + `: `,
     message.content,
   )).join('\n')
 }
@@ -90,7 +95,7 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
  * 规整模型返回的高光对话：丢掉空轮次、缺 sender 或 content 的轮次，按 maxHighlightLines 截断，
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  *
- * 模型直接返回每轮的发送者昵称与发言原文，不做回查校验。
+ * 模型直接返回每轮的发送者昵称、头像与发言原文，不做回查校验。
  */
 export function normalizeDialogue(
   item: Partial<HighlightDialogue<HighlightLine>> | undefined,
@@ -100,6 +105,7 @@ export function normalizeDialogue(
     .map((line) => ({
       sender: String(line?.sender ?? '').trim(),
       content: String(line?.content ?? '').trim(),
+      avatar: String(line?.avatar ?? '').trim() || undefined,
     }))
     .filter((line) => line.sender && line.content)
     .slice(0, maxLines)
@@ -253,8 +259,8 @@ export async function analyzeDialogues(
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
-  // 模型直接返回每轮的昵称与原文，投喂普通对话格式即可，无需 <msgid:…> 锚点
-  const messagesText = formatForPrompt(usable, time)
+  // 模型直接返回每轮的昵称、头像与原文，投喂时行首自带 [头像 地址] 标记供模型照抄
+  const messagesText = formatForPrompt(usable, time, true)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)
 
