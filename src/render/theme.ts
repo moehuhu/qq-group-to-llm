@@ -561,8 +561,6 @@ const DIALOGUES_PARTS = `
   position: relative;
   flex: 0 0 auto;
   width: 54px; height: 54px;
-  /* 名字那行占掉的高度（16 × 1.5 + 5px 下边距），让头像跟气泡第一行齐平而不是跟名字齐平 */
-  margin-top: 29px;
   border-radius: 50%;
   color: #fff;
   font-size: 20px;
