@@ -136,20 +136,16 @@ export function renderPersona(persona: UserPersonaProfile, evidenceText: string[
   return lines.join('\n')
 }
 
-/** 把问答渲染为 markdown：回答在上，回答所依据的聊天记录原文列在下 */
+/**
+ * 把问答渲染为 markdown。
+ * cited 仍会被回查核对（用于告警模型编造的 id），但按需求不展示引用来源，只输出回答正文。
+ */
 export function renderQueryAnswer(result: QueryAnswerResult): string {
   const lines: string[] = []
   lines.push(`**回答**`)
   lines.push('')
   lines.push(escapeMarkdown(result.answer?.trim() || '（无回答）'))
   lines.push('')
-
-  if (result.cited?.length) {
-    lines.push('', `**📌 依据的聊天记录原文**`)
-    for (const quote of result.cited) {
-      lines.push(`> **${escapeMarkdown(quote.sender)}**（${escapeMarkdown(quote.time)}）：${escapeMarkdown(quote.content)}`)
-    }
-  }
 
   while (lines.length && lines[lines.length - 1] === '') lines.pop()
   return lines.join('\n')
