@@ -353,7 +353,7 @@ export class LLMService extends Service {
     }))
   }
 
-  /** 挑选单句成立的金句，只还原消息 id 与入选理由，原文与发送者由调用方按 id 回查 */
+  /** 挑选单句成立的金句，模型直接返回昵称与原文，原文不再按 id 回查 */
   async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<GoldenQuote[]> {
     return this.chatYaml<GoldenQuote>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
       ...context,

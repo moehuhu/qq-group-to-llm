@@ -15,7 +15,6 @@ import type {
   HighlightLine,
   GroupAnalysisResult,
   QueryAnswerResult,
-  ResolvedQuote,
   SummaryTopic,
 } from '../types'
 export interface AnalysisTarget {
@@ -120,42 +119,16 @@ function summarizeDropped(text: string | undefined | null, limit = 50): string {
   return cleaned ? `「${cleaned.slice(0, limit)}${cleaned.length > limit ? '…' : ''}」` : '（无正文）'
 }
 
-/** 规整模型返回的金句候选：只认 msgid 与 reason，缺 msgid 的直接丢弃 */
+/** 规整模型返回的金句候选：只认 sender 与 content 与 reason，缺内容的直接丢弃 */
 export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQuote | null {
-  const msgid = String(item?.msgid ?? '').trim().replace(/^msgid:/, '')
-  if (!msgid) return null
+  const sender = String(item?.sender ?? '').trim()
+  const content = String(item?.content ?? '').trim()
+  if (!sender || !content) return null
   return {
-    msgid,
+    sender,
+    content,
     reason: item?.reason?.trim() || undefined,
   }
-}
-
-/**
- * 按 msgid 在本次投喂的记录里回查金句原文与发送者，保持引用顺序。
- *
- * 模型只还原消息 id，不报正文也不报发言人——它抄的原文、还原的昵称都不可信。
- * 只在本批投喂（已剔除 quoteUserFilter 用户）的记录内回查：模型能引用的只有它
- * 看到过的消息，命不中的（编造的、或库里其他消息的 id）一律丢弃，杜绝引到
- * 别处的原文。消息在 fetchMessages 时已清洗过，这里直接用。
- */
-export function resolveQuoteMessages(
-  messages: MessageRecord[],
-  quotes: GoldenQuote[],
-): ResolvedQuote[] {
-  const byId = new Map<string, MessageRecord>()
-  for (const record of messages) {
-    byId.set(record.messageId || record.id, record)
-    byId.set(record.id, record)
-  }
-  return quotes.flatMap((quote) => {
-    const record = byId.get(quote.msgid)
-    if (!record?.content) return []
-    return [{
-      sender: record.username || record.userId || '匿名',
-      content: record.content,
-      reason: quote.reason?.trim() || undefined,
-    }]
-  })
 }
 
 /**
@@ -243,25 +216,21 @@ export async function analyzeGroup(
   // 两个子任务一起发出，实际同时在飞几个由 LLMService 的并发闸门说了算。
   // 这里不自己再控一层并发——两处各管一半的话，真实并发数就说不清了。
   // 高光对话不在这里抽取，它由独立的「高光对话」命令负责。
-  // 金句投喂带 <msgid:…> 锚点：模型只还原消息 id，渲染前按 id 回查原文与发送者，
-  // 不再信任它抄的原文和还原的昵称
+  // 金句由模型直接返回昵称与原文，投喂普通对话格式即可，无需 <msgid:…> 锚点
   const [topics, quotes] = await Promise.all([
     settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
     config.maxGoldenQuotes > 0
       ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(
-        formatForQueryPrompt(quoteMessages, time), buildContext(quoteMessages, target, time, query)), '金句提取')
+        formatForPrompt(quoteMessages, time), buildContext(quoteMessages, target, time, query)), '金句提取')
       : Promise.resolve([]),
   ])
 
   // 模型偶尔会漏字段，缺主键的条目直接丢弃，避免污染报告
   const usableTopics = topics.filter((topic) => topic?.topic)
-  const normalizedQuotes = quotes
+  const usableQuotes = quotes
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
-  const rawQuotes = normalizedQuotes.slice(0, config.maxGoldenQuotes)
-  // 按 msgid 回查原文与发送者。投喂前已剔除 quoteUserFilter 用户，
-  // 回查只在 quoteMessages 内进行，屏蔽用户的发言引不出来
-  const usableQuotes = resolveQuoteMessages(quoteMessages, rawQuotes)
+    .slice(0, config.maxGoldenQuotes)
 
   // 逐条记录被丢弃的话题与金句，日志里指出具体是哪条、为什么丢
   const droppedDetails: string[] = []
@@ -276,23 +245,16 @@ export async function analyzeGroup(
       droppedDetails.push(`话题第 ${index + 1} 条「${summarizeDropped(topic.topic)}」：超出 maxTopics=${config.maxTopics} 上限`)
     }
   }
-  const byQuoteId = new Map<string, MessageRecord>()
-  for (const record of quoteMessages) {
-    byQuoteId.set(record.messageId || record.id, record)
-    byQuoteId.set(record.id, record)
-  }
   let quoteRank = 0 // 第几个有效金句（归一化后按原始顺序计），用于判断是否超出上限
   for (const [index, item] of quotes.entries()) {
     const quote = normalizeQuote(item)
     if (!quote) {
-      droppedDetails.push(`金句第 ${index + 1} 条：缺 msgid，无法回查`)
+      droppedDetails.push(`金句第 ${index + 1} 条：缺 sender 或 content，无法展示`)
       continue
     }
     quoteRank += 1
     if (quoteRank > config.maxGoldenQuotes) {
       droppedDetails.push(`金句第 ${index + 1} 条「${summarizeDropped(quote.reason)}」：超出 maxGoldenQuotes=${config.maxGoldenQuotes} 上限`)
-    } else if (!byQuoteId.get(quote.msgid)?.content) {
-      droppedDetails.push(`金句第 ${index + 1} 条：msgid ${quote.msgid} 回查落空（编造或不在投喂范围内）`)
     }
   }
   if (droppedDetails.length) {
