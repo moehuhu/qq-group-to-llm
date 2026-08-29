@@ -24,8 +24,20 @@ export interface GoldenQuote {
   reason?: string
 }
 
-/** 高光对话里的一轮发言 */
+/**
+ * 高光对话里的一轮发言。
+ *
+ * 模型只还原消息 id，不报正文、不报发言人——它会把原文抄错、抄漏或润色，
+ * 昵称也可能张冠李戴。所以 LLM 的返回只存 msgid，渲染时再按 msgid 从数据库
+ * 回查原文与发言人，保证白纸黑字跟原话一字不差。
+ */
 export interface HighlightLine {
+  /** 发言在库里的 <msgid:…> 锚点，渲染前回查原文与发言人 */
+  msgid: string
+}
+
+/** 已回查原文的高光对话轮次，供渲染层直接展示 */
+export interface ResolvedHighlightLine {
   sender: string
   content: string
   /** 发言人头像，由记录里回查得到；渲染图片时用，取不到则退回首字色块 */
@@ -35,23 +47,26 @@ export interface HighlightLine {
 /**
  * 一段「高光对话」：带学术要素的冷幽默群聊片段，由独立的「高光对话」命令产出。
  * 与金句不同，它保留多轮上下文——笑点往往在一来一回之间才成立。
+ *
+ * L 是单轮发言的类型：抽取阶段是只带 msgid 的 HighlightLine，
+ * 回查原文后是带正文与头像的 ResolvedHighlightLine。
  */
-export interface HighlightDialogue {
+export interface HighlightDialogue<L = HighlightLine> {
   /** 一句话概括这段对话在聊什么 */
   title?: string
   /** 按原始时间正序的对话轮次 */
-  lines: HighlightLine[]
+  lines: L[]
   /** 入选原因 */
   reason?: string
 }
 
 /** 「高光对话」命令的产物：一批对话，加上取数范围供渲染标题用 */
-export interface DialogueDigest {
+export interface DialogueDigest<L = HighlightLine> {
   groupName: string
   timeRange: string
   /** 本次分析取用的消息条数 */
   totalMessages: number
-  dialogues: HighlightDialogue[]
+  dialogues: HighlightDialogue<L>[]
 }
 
 /**

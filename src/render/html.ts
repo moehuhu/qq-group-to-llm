@@ -8,7 +8,7 @@
  * ——markdown 那条出口不受影响，emoji 由聊天客户端自己渲染，那边照旧用。
  * 用户内容里的 emoji 是数据，原样透传，这条只约束模板自己写死的字符。
  */
-import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, ResolvedHighlightLine, UserPersonaProfile } from '../types'
 import {
   DIALOGUES_THEME, PERSONA_THEME, REPORT_THEME,
   resolveDocument, type RenderStyleConfig,
@@ -311,7 +311,7 @@ const stat = (value: string | number, label: string) =>
   `<div class="stat-label">${escapeHtml(label)}</div></div>`
 
 /** 一段高光对话：逐轮自上而下，气泡一律靠左，发言人靠头像与名字区分 */
-function renderDialogue(dialogue: HighlightDialogue): string {
+function renderDialogue(dialogue: HighlightDialogue<ResolvedHighlightLine>): string {
   const turns = dialogue.lines.map((line) => {
     const name = line.sender || '匿名'
     return `<div class="turn">` +
@@ -438,7 +438,7 @@ export function renderReportHtml(result: GroupAnalysisResult, config: RenderStyl
 }
 
 /** 高光对话 → HTML。单列通栏：聊天气泡要靠宽度才排得开 */
-export function renderDialoguesHtml(digest: DialogueDigest, config: RenderStyleConfig): string {
+export function renderDialoguesHtml(digest: DialogueDigest<ResolvedHighlightLine>, config: RenderStyleConfig): string {
   const dialogues = digest.dialogues.length
     ? group(digest.dialogues.map(renderDialogue).join(''), digest.dialogues.length, 1, config.imageWidth)
     : `<div class="empty">这段时间没有找到符合条件的对话。</div>`

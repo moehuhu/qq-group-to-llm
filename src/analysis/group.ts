@@ -12,8 +12,10 @@ import type {
   DialogueDigest,
   GoldenQuote,
   HighlightDialogue,
+  HighlightLine,
   GroupAnalysisResult,
   QueryAnswerResult,
+  ResolvedHighlightLine,
   SummaryTopic,
 } from '../types'
 
@@ -142,27 +144,21 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
 }
 
 /**
- * 规整模型返回的高光对话：丢掉空轮次、按 maxHighlightLines 截断，
+ * 规整模型返回的高光对话：丢掉空轮次、缺 msgid 的轮次，按 maxHighlightLines 截断，
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  *
- * avatars 是「昵称 → 头像地址」的对照表，用来给每轮发言补上头像；
- * 模型只会还原昵称，头像得从原始记录里回查。
+ * 模型只还原消息 id，不报正文也不报发言人——它会把原文抄错、昵称张冠李戴。
+ * 所以这里只校验 msgid，正文与发言人等渲染前按 id 从库里回查。
  */
 export function normalizeDialogue(
-  item: Partial<HighlightDialogue> | undefined,
+  item: Partial<HighlightDialogue<HighlightLine>> | undefined,
   maxLines: number,
-  avatars: Map<string, string> = new Map(),
-): HighlightDialogue | null {
+): HighlightDialogue<HighlightLine> | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
-    .map((line) => {
-      const sender = String(line?.sender ?? '').trim()
-      return {
-        sender,
-        content: String(line?.content ?? '').trim(),
-        avatar: avatars.get(sender) || undefined,
-      }
-    })
-    .filter((line) => line.content)
+    .map((line) => ({
+      msgid: String(line?.msgid ?? '').trim().replace(/^msgid:/, ''),
+    }))
+    .filter((line) => line.msgid)
     .slice(0, maxLines)
 
   if (lines.length < 2) return null
@@ -282,30 +278,23 @@ export async function analyzeDialogues(
   const startedAt = Date.now()
 
   const usable = excludeUsers(messages, config.dialogueUserFilter)
-  const blocked = blockedNames(messages, config.dialogueUserFilter)
   if (messages.length !== usable.length) {
     log.info(`高光对话屏蔽了 ${messages.length - usable.length} 条发言`)
   }
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
-  const messagesText = formatForPrompt(usable, time)
+  // 高光对话也要逐条带 <msgid:…> 锚点：模型只还原消息 id，不报正文也不报发言人，
+  // 渲染前按 id 回查原文与发言人——它抄的原文、还原的昵称都不可信
+  const messagesText = formatForQueryPrompt(usable, time)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)
 
   const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context)
 
-  // 昵称 → 头像。usable 按时间正序，重名时后者胜出，取到的是最近一次的头像
-  const avatars = new Map<string, string>()
-  for (const message of usable) {
-    if (message.username && message.avatar) avatars.set(message.username, message.avatar)
-  }
-
   const dialogues = raw
-    .map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
-    .filter((item): item is HighlightDialogue => !!item)
-    // 整段丢弃：抽掉其中一轮，剩下的对话就接不上了
-    .filter((item) => !item.lines.some((line) => blocked.has(line.sender)))
+    .map((item) => normalizeDialogue(item, config.maxHighlightLines))
+    .filter((item): item is HighlightDialogue<HighlightLine> => !!item)
     .slice(0, config.maxHighlightDialogues)
 
   const dropped = raw.length - dialogues.length
@@ -318,6 +307,67 @@ export async function analyzeDialogues(
     timeRange: context.timeRange,
     totalMessages: usable.length,
     dialogues,
+  }
+}
+
+/**
+ * 把高光对话里的 msgid 回查成原文与发言人，供渲染层直接展示。
+ *
+ * 在本次投喂的记录（含被 dialogueUserFilter 屏蔽的）里回查，不带出投喂范围之外的原文；
+ * 消息在 fetchMessages 时已清洗过，这里直接用。发言人、头像都取自消息记录本身，
+ * 不再信任模型还原的昵称——被屏蔽用户的发言，其段连同 msgid 一起在这里丢弃。
+ * 命中失败（历史记录被清理）的那轮没有正文，连同它所在的段一起丢弃——
+ * 抽掉一轮剩下的对话就接不上了。
+ */
+export async function resolveDialogueDigest(
+  ctx: Context,
+  config: Config,
+  digest: DialogueDigest<HighlightLine>,
+): Promise<DialogueDigest<ResolvedHighlightLine>> {
+  const ids = [...new Set(digest.dialogues.flatMap((dialogue) =>
+    dialogue.lines.map((line) => line.msgid).filter(Boolean)))]
+
+  const records = ids.length
+    ? await ctx.database
+      .select(TABLE)
+      .where({ $or: [{ messageId: { $in: ids } }, { id: { $in: ids } }] })
+      .execute()
+    : []
+
+  const byId = new Map<string, MessageRecord>()
+  for (const record of records) {
+    byId.set(record.messageId || record.id, record)
+    byId.set(record.id, record)
+  }
+
+  const blocked = new Set(config.dialogueUserFilter)
+  const dialogues = digest.dialogues.map((dialogue) => {
+    const lines: ResolvedHighlightLine[] = []
+    for (const line of dialogue.lines) {
+      const record = byId.get(line.msgid)
+      if (!record?.content) continue
+      // 屏蔽名单按用户 ID 填的，发言人由记录回查拿到，正好在这里拦一道
+      if (blocked.has(record.userId ?? '')) continue
+      lines.push({
+        sender: record.username || record.userId || '匿名',
+        content: record.content,
+        avatar: record.avatar || undefined,
+      })
+    }
+    return {
+      title: dialogue.title,
+      lines,
+      reason: dialogue.reason,
+    }
+  })
+  // 抽掉一轮剩下的对话就接不上了，整段丢弃
+  const usable = dialogues.filter((dialogue) => dialogue.lines.length >= 2)
+
+  return {
+    groupName: digest.groupName,
+    timeRange: digest.timeRange,
+    totalMessages: digest.totalMessages,
+    dialogues: usable,
   }
 }
 
