@@ -3,6 +3,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import { toMarkdownMessage } from '../markdown'
 import { analyzeGroup, answerQuery, fetchMessages } from '../analysis'
+import { renderQueryAnswer } from '../analysis/report'
 import { resolveTarget } from './target'
 import { renderHtmlToImage, renderReportHtml } from '../render'
 import type { GroupAnalysisResult } from '../types'
@@ -74,8 +75,8 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
 
       try {
         if (question) {
-          const answer = await answerQuery(ctx, config, messages, target, question)
-          return toMarkdownMessage(answer)
+          const result = await answerQuery(ctx, config, messages, target, question)
+          return toMarkdownMessage(renderQueryAnswer(result))
         }
         const result = await analyzeGroup(ctx, config, messages, target)
         if (config.cacheMinutes > 0) {

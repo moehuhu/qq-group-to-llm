@@ -2,10 +2,14 @@ import { Context, Service } from 'koishi'
 import { load } from 'js-yaml'
 import type { Config, LLMModelConfig } from '../config'
 import { logger } from '../logger'
-import type { AnalysisContext, GoldenQuote, HighlightDialogue, SummaryTopic, UserPersonaProfile } from '../types'
+import type { AnalysisContext, GoldenQuote, HighlightDialogue, QueryAnswer, SummaryTopic, UserPersonaProfile } from '../types'
 import {
   describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairYaml,
 } from './prompt'
+
+/** 把模型返回的任意字段规整成字符串数组，空值与非数组一律兜底为空数组 */
+const toArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map(String).filter(Boolean) : []
 
 /** 插件提供的所有 LLM 任务 */
 export type LLMTaskId =
@@ -378,9 +382,15 @@ export class LLMService extends Service {
     return { ...profile, userId: input.userId, username: input.username }
   }
 
-  /** 自然语言问答，返回纯文本 */
-  async answerQuery(messages: string, context: AnalysisContext): Promise<string> {
-    return this.chat('query', fill(this.config.promptQuery, { ...context, messages }))
+  /** 自然语言问答。返回回答与所引用的消息 id，供调用方回查原文展示 */
+  async answerQuery(messages: string, context: AnalysisContext): Promise<QueryAnswer> {
+    const results = await this.chatYaml<QueryAnswer>('query', fill(this.config.promptQuery, { ...context, messages }))
+    const result = results[0]
+    if (!result?.answer?.trim()) {
+      this.log.warn('[群聊问答] 结果缺少 answer 字段，视为无效')
+      return { answer: '' }
+    }
+    return { answer: result.answer, cited: toArray(result.cited) }
   }
 }
 

@@ -5,7 +5,7 @@
  * - 列表前若是普通文本，必须用空行隔开，否则无法被识别
  * - 单条 markdown 消息建议不超过 2000 字符
  */
-import type { DialogueDigest, GroupAnalysisResult, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, QueryAnswerResult, UserPersonaProfile } from '../types'
 import { escapeMarkdown } from '../markdown'
 
 const toArray = (value: unknown): string[] =>
@@ -128,6 +128,25 @@ export function renderPersona(persona: UserPersonaProfile, evidenceText: string[
   if (evidenceText.length) {
     lines.push('', '**📌 代表发言**')
     for (const quote of evidenceText) {
+      lines.push(`> ${escapeMarkdown(quote)}`)
+    }
+  }
+
+  while (lines.length && lines[lines.length - 1] === '') lines.pop()
+  return lines.join('\n')
+}
+
+/** 把问答渲染为 markdown：回答在上，回答所依据的聊天记录原文列在下 */
+export function renderQueryAnswer(result: QueryAnswerResult): string {
+  const lines: string[] = []
+  lines.push(`**回答**`)
+  lines.push('')
+  lines.push(escapeMarkdown(result.answer?.trim() || '（无回答）'))
+  lines.push('')
+
+  if (result.cited?.length) {
+    lines.push('', `**📌 依据的聊天记录原文**`)
+    for (const quote of result.cited) {
       lines.push(`> ${escapeMarkdown(quote)}`)
     }
   }

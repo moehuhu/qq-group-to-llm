@@ -115,10 +115,13 @@ export const HIGHLIGHT_DIALOGUES =
 export const QUERY =
   `你是群聊记录问答助手。请只依据下面的群聊记录回答用户的问题。
 
+每条记录行首有 <msgid:xxx> 锚点，回答中凡是依据某条消息得出的结论，都要把该消息的 msgid 填进 cited 列表，以便把聊天记录原文附在回答后面核对。
+
 规则：
 - 记录里没有的信息，直接说明"记录中没有相关内容"，不要编造
 - 回答中使用昵称而非用户 ID
-- 用纯文本回答，不要使用 markdown 语法，控制在 300 字以内
+- cited 只填记录中 <msgid:xxx> 里的 id 原文，挑回答所依据的 1-10 条，不要编造 id
+- 纯文本，不要 markdown 语法，控制在 300 字以内
 
 群聊：{groupName}
 当前时间：{currentTime}
@@ -127,7 +130,15 @@ export const QUERY =
 群聊记录：
 {messages}
 
-用户问题：{query}`
+用户问题：{query}
+
+请严格按以下 YAML 格式返回，并放在 markdown 代码块中：
+\`\`\`yaml
+answer: |-
+  你的回答，纯文本
+cited:
+  - "msgid"
+\`\`\``
 
 export const USER_PERSONA =
   `你是一名社群观察员。请基于该用户的聊天记录，给出一份中性、克制的用户画像。

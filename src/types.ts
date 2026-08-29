@@ -54,6 +54,23 @@ export interface DialogueDigest {
   dialogues: HighlightDialogue[]
 }
 
+/**
+ * LLM 问答的原始返回。answer 是给用户看的回答，
+ * cited 是回答所依据的消息 id，回查原文后随回答一起展示，防止张冠李戴。
+ */
+export interface QueryAnswer {
+  answer: string
+  /** 引用的消息 id（<msgid:…> 锚点），可能混有模型编造的，回查时丢弃 */
+  cited?: string[]
+}
+
+/** 「群聊问答」的最终产物：回答 + 回查成功的引用消息原文，供渲染层直接展示 */
+export interface QueryAnswerResult {
+  answer: string
+  /** 回答所依据的消息原文，按模型引用的顺序，回查失败的已剔除 */
+  cited: string[]
+}
+
 export interface UserStats {
   userId: string
   username: string

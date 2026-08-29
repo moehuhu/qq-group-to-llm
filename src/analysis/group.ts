@@ -12,6 +12,7 @@ import type {
   GoldenQuote,
   HighlightDialogue,
   GroupAnalysisResult,
+  QueryAnswerResult,
   SummaryTopic,
 } from '../types'
 
@@ -81,6 +82,45 @@ export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter):
     `[${time.time(message.timestamp)}] ${message.username || message.userId}: `,
     message.content,
   )).join('\n')
+}
+
+/**
+ * 带 <msgid:…> 锚点渲染，供模型在引用中标识消息。
+ * 锚点只在行首出现一次，所以多行正文的续行必须缩进——
+ * 否则锚点会被算到它后面那几行头上，引用的原文就对不上了。
+ * 问答需要回查引用原文，故这里与 persona 的排法一致。
+ */
+export function formatForQueryPrompt(messages: MessageRecord[], time: TimeFormatter): string {
+  return messages.map((message) => {
+    const anchor = message.messageId || message.id
+    return layoutRecord(
+      `[${time.time(message.timestamp)}] ${message.username || message.userId}: <msgid:${anchor}> `,
+      message.content,
+    )
+  }).join('\n')
+}
+
+/**
+ * 按 messageId（缺省退到记录主键）在已投喂的消息里回查引用原文，保持引用顺序。
+ * 只在 messages（本次问答实际投喂的记录）内回查：模型能引用的只有它看到过的消息，
+ * 命不中的（编造的、或库里其他消息的 id）一律丢弃，杜绝引到别处的原文。
+ */
+export async function resolveCitedMessages(
+  ctx: Context,
+  config: Config,
+  messages: MessageRecord[],
+  cited: string[],
+): Promise<string[]> {
+  const ids = [...new Set(cited.map((item) => item.replace(/^msgid:/, '').trim()).filter(Boolean))]
+  if (!ids.length) return []
+
+  const byId = new Map<string, MessageRecord>()
+  for (const record of messages) {
+    byId.set(record.messageId || record.id, record)
+    byId.set(record.id, record)
+  }
+  return ids.map((id) => byId.get(id)?.content)
+    .filter(Boolean).map((content) => cleanContent(content, config.recordImages)) as string[]
 }
 
 /** 规整金句：缺原文的直接丢弃 */
@@ -281,7 +321,7 @@ export async function answerQuery(
   messages: MessageRecord[],
   target: AnalysisTarget,
   query: string,
-): Promise<string> {
+): Promise<QueryAnswerResult> {
   const log = logger(ctx)
   // 问答是「群分析」命令的一部分，沿用同一份屏蔽名单
   const usable = excludeUsers(messages, config.analysisUserFilter)
@@ -289,5 +329,15 @@ export async function answerQuery(
   const context = buildContext(usable, target, time, query)
   log.info(`群聊问答: ${context.groupName} 基于 ${usable.length} 条消息，问题「${query}」` +
     (messages.length !== usable.length ? `（屏蔽了 ${messages.length - usable.length} 条）` : ''))
-  return ctx.qqGroupLlm.answerQuery(formatForPrompt(usable, time), context)
+
+  const outcome = await ctx.qqGroupLlm.answerQuery(formatForQueryPrompt(usable, time), context)
+  const quotes = await resolveCitedMessages(ctx, config, usable, outcome.cited ?? [])
+  if (outcome.cited?.length && !quotes.length) {
+    log.warn(`群聊问答: 模型引用了 ${outcome.cited.length} 个 msgid，回查全部落空（可能是编造的 id）`)
+  }
+
+  return {
+    answer: outcome.answer,
+    cited: quotes,
+  }
 }
