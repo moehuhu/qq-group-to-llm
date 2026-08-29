@@ -151,7 +151,7 @@ export const USER_PERSONA =
 - 只写记录能支撑的结论，不要推测用户的真实身份、职业、住址等隐私信息
 - 保持中性描述，不做褒贬评价
 - 纯文本，不要 markdown 语法
-- evidence 只填记录中 <msgid:xxx> 里的 id 原文，挑 5-10 条最有代表性的，不要编造 id
+- evidence 只填记录中 <msgid:xxx> 里的 id 原文，挑若干条最有代表性的，不要编造 id
 
 聊天记录：
 {messages}
