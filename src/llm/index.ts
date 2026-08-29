@@ -336,9 +336,9 @@ export class LLMService extends Service {
     }))
   }
 
-  /** 挑选单句成立的金句。kind 由调用方规整时补上，不要求模型返回 */
-  async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<Omit<GoldenQuote, 'kind'>[]> {
-    return this.chatYaml<Omit<GoldenQuote, 'kind'>>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
+  /** 挑选单句成立的金句，只还原消息 id 与入选理由，原文与发送者由调用方按 id 回查 */
+  async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<GoldenQuote[]> {
+    return this.chatYaml<GoldenQuote>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
       ...context,
       messages,
       maxGoldenQuotes: String(this.config.maxGoldenQuotes),

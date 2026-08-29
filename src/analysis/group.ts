@@ -16,6 +16,7 @@ import type {
   GroupAnalysisResult,
   QueryAnswerResult,
   ResolvedHighlightLine,
+  ResolvedQuote,
   SummaryTopic,
 } from '../types'
 
@@ -56,23 +57,6 @@ export async function fetchMessages(
 export function excludeUsers(messages: MessageRecord[], blocked: string[]): MessageRecord[] {
   if (!blocked?.length) return messages
   return messages.filter((message) => !message.userId || !blocked.includes(message.userId))
-}
-
-/**
- * 收集被屏蔽用户用过的昵称。
- * 模型只认昵称，屏蔽名单填的是用户 ID——两者对不上，
- * 所以还要用昵称在结果里再拦一道：别人转述、或模型张冠李戴时，
- * 光靠「不投喂」是拦不住的。
- */
-export function blockedNames(messages: MessageRecord[], blocked: string[]): Set<string> {
-  const names = new Set<string>()
-  if (!blocked?.length) return names
-  for (const message of messages) {
-    if (message.userId && blocked.includes(message.userId) && message.username) {
-      names.add(message.username)
-    }
-  }
-  return names
 }
 
 /**
@@ -132,15 +116,42 @@ export function resolveCitedMessages(
     }))
 }
 
-/** 规整金句：缺原文的直接丢弃 */
+/** 规整模型返回的金句候选：只认 msgid 与 reason，缺 msgid 的直接丢弃 */
 export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQuote | null {
-  const content = String(item?.content ?? '').trim()
-  if (!content) return null
+  const msgid = String(item?.msgid ?? '').trim().replace(/^msgid:/, '')
+  if (!msgid) return null
   return {
-    content,
-    sender: item?.sender?.trim() || undefined,
+    msgid,
     reason: item?.reason?.trim() || undefined,
   }
+}
+
+/**
+ * 按 msgid 在本次投喂的记录里回查金句原文与发送者，保持引用顺序。
+ *
+ * 模型只还原消息 id，不报正文也不报发言人——它抄的原文、还原的昵称都不可信。
+ * 只在本批投喂（已剔除 quoteUserFilter 用户）的记录内回查：模型能引用的只有它
+ * 看到过的消息，命不中的（编造的、或库里其他消息的 id）一律丢弃，杜绝引到
+ * 别处的原文。消息在 fetchMessages 时已清洗过，这里直接用。
+ */
+export function resolveQuoteMessages(
+  messages: MessageRecord[],
+  quotes: GoldenQuote[],
+): ResolvedQuote[] {
+  const byId = new Map<string, MessageRecord>()
+  for (const record of messages) {
+    byId.set(record.messageId || record.id, record)
+    byId.set(record.id, record)
+  }
+  return quotes.flatMap((quote) => {
+    const record = byId.get(quote.msgid)
+    if (!record?.content) return []
+    return [{
+      sender: record.username || record.userId || '匿名',
+      content: record.content,
+      reason: quote.reason?.trim() || undefined,
+    }]
+  })
 }
 
 /**
@@ -200,7 +211,6 @@ export async function analyzeGroup(
   // 话题与金句的屏蔽名单是分开的：可以允许某人进话题和活跃榜，但不收他的金句
   const analysisMessages = excludeUsers(messages, config.analysisUserFilter)
   const quoteMessages = excludeUsers(messages, config.quoteUserFilter)
-  const blockedQuoteNames = blockedNames(messages, config.quoteUserFilter)
   const hidden = messages.length - analysisMessages.length
   if (hidden) {
     log.info(`群分析屏蔽了 ${config.analysisUserFilter.length} 个用户的 ${hidden} 条发言`)
@@ -229,23 +239,27 @@ export async function analyzeGroup(
   // 两个子任务一起发出，实际同时在飞几个由 LLMService 的并发闸门说了算。
   // 这里不自己再控一层并发——两处各管一半的话，真实并发数就说不清了。
   // 高光对话不在这里抽取，它由独立的「高光对话」命令负责。
+  // 金句投喂带 <msgid:…> 锚点：模型只还原消息 id，渲染前按 id 回查原文与发送者，
+  // 不再信任它抄的原文和还原的昵称
   const [topics, quotes] = await Promise.all([
     settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
     config.maxGoldenQuotes > 0
       ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(
-        formatForPrompt(quoteMessages, time), buildContext(quoteMessages, target, time, query)), '金句提取')
+        formatForQueryPrompt(quoteMessages, time), buildContext(quoteMessages, target, time, query)), '金句提取')
       : Promise.resolve([]),
   ])
 
   // 模型偶尔会漏字段，缺主键的条目直接丢弃，避免污染报告
   const usableTopics = topics.filter((topic) => topic?.topic)
-  const usableQuotes = quotes
+  const rawQuotes = quotes
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
-    .filter((quote) => !quote.sender || !blockedQuoteNames.has(quote.sender))
     .slice(0, config.maxGoldenQuotes)
+  // 按 msgid 回查原文与发送者。投喂前已剔除 quoteUserFilter 用户，
+  // 回查只在 quoteMessages 内进行，屏蔽用户的发言引不出来
+  const usableQuotes = resolveQuoteMessages(quoteMessages, rawQuotes)
   const dropped = (topics.length - usableTopics.length) + (quotes.length - usableQuotes.length)
-  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段或超出条数上限）`)
+  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段、超出条数上限或回查落空）`)
 
   log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${usableTopics.length} 个话题 / ` +
     `${usableQuotes.length} 条金句`)

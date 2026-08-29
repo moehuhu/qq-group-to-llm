@@ -51,12 +51,15 @@ export const GOLDEN_QUOTES =
 
 请严格按以下 YAML 格式返回，并放在 markdown 代码块中：
 \`\`\`yaml
-- content: |-
-    金句原文
-  sender: "发言人昵称"
+- msgid: "记录中 <msgid:xxx> 里的 id 原文"
   reason: |-
     入选理由，纯文本
 \`\`\`
+
+格式上有一处容易写错，请特别注意：
+- msgid 是**字符串**：只填 <msgid:xxx> 里的 id 原文，不要带尖括号和 msgid: 前缀，也不要把它写成一个列表
+
+少缩进一格、或者把 \`-\` 写成编号，整段 YAML 都会解析失败。
 
 如果没有值得收录的金句，返回空列表：
 \`\`\`yaml

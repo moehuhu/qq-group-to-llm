@@ -17,10 +17,26 @@ export interface SummaryTopic {
   messages?: string[]
 }
 
-/** 一条「金句」：单句成立的精彩发言，随群分析报告一起产出 */
+/**
+ * 一条「金句」：单句成立的精彩发言，随群分析报告一起产出。
+ *
+ * LLM 只返回引用的 msgid 与入选理由，不报正文、不报发言人——它会把原文抄错、
+ * 抄漏或润色，昵称也可能张冠李戴。原文与发言人由数据库回查补上，保证一字不差。
+ */
 export interface GoldenQuote {
+  /** 发言在库里的 <msgid:…> 锚点，渲染前回查原文与发言人 */
+  msgid: string
+  /** 入选理由 */
+  reason?: string
+}
+
+/** 已回查原文与发送者的金句，供渲染层直接展示 */
+export interface ResolvedQuote {
+  /** 发言人昵称，缺省退回用户 ID */
+  sender: string
+  /** 清洗后的消息正文 */
   content: string
-  sender?: string
+  /** 入选理由 */
   reason?: string
 }
 
@@ -124,7 +140,8 @@ export interface GroupAnalysisResult {
   hourly: number[]
   userStats: UserStats[]
   topics: SummaryTopic[]
-  quotes: GoldenQuote[]
+  /** 金句，已回查原文与发送者 */
+  quotes: ResolvedQuote[]
 }
 
 export interface UserPersonaProfile {
