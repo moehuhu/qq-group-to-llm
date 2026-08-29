@@ -116,6 +116,12 @@ export function resolveCitedMessages(
     }))
 }
 
+/** 把模型返回的条目压成一句可读的摘要，日志里用它指出具体丢的是哪一条 */
+function summarizeDropped(text: string | undefined | null, limit = 50): string {
+  const cleaned = String(text ?? '').replace(/\s+/g, ' ').trim()
+  return cleaned ? `「${cleaned.slice(0, limit)}${cleaned.length > limit ? '…' : ''}」` : '（无正文）'
+}
+
 /** 规整模型返回的金句候选：只认 msgid 与 reason，缺 msgid 的直接丢弃 */
 export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQuote | null {
   const msgid = String(item?.msgid ?? '').trim().replace(/^msgid:/, '')
@@ -251,15 +257,49 @@ export async function analyzeGroup(
 
   // 模型偶尔会漏字段，缺主键的条目直接丢弃，避免污染报告
   const usableTopics = topics.filter((topic) => topic?.topic)
-  const rawQuotes = quotes
+  const normalizedQuotes = quotes
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
-    .slice(0, config.maxGoldenQuotes)
+  const rawQuotes = normalizedQuotes.slice(0, config.maxGoldenQuotes)
   // 按 msgid 回查原文与发送者。投喂前已剔除 quoteUserFilter 用户，
   // 回查只在 quoteMessages 内进行，屏蔽用户的发言引不出来
   const usableQuotes = resolveQuoteMessages(quoteMessages, rawQuotes)
-  const dropped = (topics.length - usableTopics.length) + (quotes.length - usableQuotes.length)
-  if (dropped) log.warn(`丢弃 ${dropped} 条不合格的 LLM 结果（缺字段、超出条数上限或回查落空）`)
+
+  // 逐条记录被丢弃的话题与金句，日志里指出具体是哪条、为什么丢
+  const droppedDetails: string[] = []
+  let topicRank = 0 // 第几个有效话题（按原始顺序计），用于判断是否超出上限
+  for (const [index, topic] of topics.entries()) {
+    if (!topic?.topic) {
+      droppedDetails.push(`话题第 ${index + 1} 条「${summarizeDropped(topic?.detail ?? topic?.messages?.[0])}」缺少 topic 字段`)
+      continue
+    }
+    topicRank += 1
+    if (topicRank > config.maxTopics) {
+      droppedDetails.push(`话题第 ${index + 1} 条「${summarizeDropped(topic.topic)}」：超出 maxTopics=${config.maxTopics} 上限`)
+    }
+  }
+  const byQuoteId = new Map<string, MessageRecord>()
+  for (const record of quoteMessages) {
+    byQuoteId.set(record.messageId || record.id, record)
+    byQuoteId.set(record.id, record)
+  }
+  let quoteRank = 0 // 第几个有效金句（归一化后按原始顺序计），用于判断是否超出上限
+  for (const [index, item] of quotes.entries()) {
+    const quote = normalizeQuote(item)
+    if (!quote) {
+      droppedDetails.push(`金句第 ${index + 1} 条：缺 msgid，无法回查`)
+      continue
+    }
+    quoteRank += 1
+    if (quoteRank > config.maxGoldenQuotes) {
+      droppedDetails.push(`金句第 ${index + 1} 条「${summarizeDropped(quote.reason)}」：超出 maxGoldenQuotes=${config.maxGoldenQuotes} 上限`)
+    } else if (!byQuoteId.get(quote.msgid)?.content) {
+      droppedDetails.push(`金句第 ${index + 1} 条：msgid ${quote.msgid} 回查落空（编造或不在投喂范围内）`)
+    }
+  }
+  if (droppedDetails.length) {
+    log.warn(`丢弃 ${droppedDetails.length} 条不合格的 LLM 结果:\n- ` + droppedDetails.join('\n- '))
+  }
 
   log.info(`群分析完成，耗时 ${Date.now() - startedAt}ms，产出 ${usableTopics.length} 个话题 / ` +
     `${usableQuotes.length} 条金句`)
@@ -306,13 +346,30 @@ export async function analyzeDialogues(
 
   const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context)
 
-  const dialogues = raw
-    .map((item) => normalizeDialogue(item, config.maxHighlightLines))
+  const normalized = raw.map((item) => normalizeDialogue(item, config.maxHighlightLines))
+  const dialogues = normalized
     .filter((item): item is HighlightDialogue<HighlightLine> => !!item)
     .slice(0, config.maxHighlightDialogues)
 
-  const dropped = raw.length - dialogues.length
-  if (dropped) log.warn(`丢弃 ${dropped} 段不合格的对话（缺字段、超出条数上限，或不足两人两轮）`)
+  // 逐段记录被丢弃的高光对话，日志里指出具体是哪段、为什么丢
+  const droppedDetails: string[] = []
+  let dialogueRank = 0 // 第几段有效对话（归一化后按原始顺序计），用于判断是否超出上限
+  for (const [index, item] of raw.entries()) {
+    const dialogue = normalizeDialogue(item, config.maxHighlightLines)
+    if (!dialogue) {
+      const title = summarizeDropped(item?.title)
+      const lineCount = Array.isArray(item?.lines) ? item.lines.filter((line) => String(line?.msgid ?? '').trim()).length : 0
+      droppedDetails.push(`第 ${index + 1} 段「${title}」：有效轮次仅 ${lineCount} 轮（不足两人两轮）`)
+      continue
+    }
+    dialogueRank += 1
+    if (dialogueRank > config.maxHighlightDialogues) {
+      droppedDetails.push(`第 ${index + 1} 段「${summarizeDropped(dialogue.title)}」：超出 maxHighlightDialogues=${config.maxHighlightDialogues} 上限`)
+    }
+  }
+  if (droppedDetails.length) {
+    log.warn(`丢弃 ${droppedDetails.length} 段不合格的对话:\n- ` + droppedDetails.join('\n- '))
+  }
 
   log.info(`高光对话抽取完成，耗时 ${Date.now() - startedAt}ms，产出 ${dialogues.length} 段`)
 
@@ -338,6 +395,7 @@ export async function resolveDialogueDigest(
   config: Config,
   digest: DialogueDigest<HighlightLine>,
 ): Promise<DialogueDigest<ResolvedHighlightLine>> {
+  const log = logger(ctx)
   const ids = [...new Set(digest.dialogues.flatMap((dialogue) =>
     dialogue.lines.map((line) => line.msgid).filter(Boolean)))]
 
@@ -355,13 +413,20 @@ export async function resolveDialogueDigest(
   }
 
   const blocked = new Set(config.dialogueUserFilter)
+  const droppedLines: string[] = []
   const dialogues = digest.dialogues.map((dialogue) => {
     const lines: ResolvedHighlightLine[] = []
     for (const line of dialogue.lines) {
       const record = byId.get(line.msgid)
-      if (!record?.content) continue
+      if (!record?.content) {
+        droppedLines.push(`「${summarizeDropped(dialogue.title)}」轮次 ${line.msgid} 回查落空（历史记录已被清理或删除）`)
+        continue
+      }
       // 屏蔽名单按用户 ID 填的，发言人由记录回查拿到，正好在这里拦一道
-      if (blocked.has(record.userId ?? '')) continue
+      if (blocked.has(record.userId ?? '')) {
+        droppedLines.push(`「${summarizeDropped(dialogue.title)}」轮次 ${line.msgid}（${record.username || record.userId || '匿名'}）命中 dialogueUserFilter，整段丢弃`)
+        continue
+      }
       lines.push({
         sender: record.username || record.userId || '匿名',
         content: record.content,
@@ -376,6 +441,9 @@ export async function resolveDialogueDigest(
   })
   // 抽掉一轮剩下的对话就接不上了，整段丢弃
   const usable = dialogues.filter((dialogue) => dialogue.lines.length >= 2)
+  if (droppedLines.length) {
+    log.warn(`高光对话回查丢弃 ${droppedLines.length} 轮:\n- ` + droppedLines.join('\n- '))
+  }
 
   return {
     groupName: digest.groupName,
@@ -402,9 +470,20 @@ export async function answerQuery(
     (messages.length !== usable.length ? `（屏蔽了 ${messages.length - usable.length} 条）` : ''))
 
   const outcome = await ctx.qqGroupLlm.answerQuery(formatForQueryPrompt(usable, time), context)
-  const quotes = resolveCitedMessages(usable, outcome.cited ?? [], time)
-  if (outcome.cited?.length && !quotes.length) {
-    log.warn(`群聊问答: 模型引用了 ${outcome.cited.length} 个 msgid，回查全部落空（可能是编造的 id）`)
+  const quoted = outcome.cited ?? []
+  const quotedIds = [...new Set(quoted.map((item) => item.replace(/^msgid:/, '').trim()).filter(Boolean))]
+  const quotes = resolveCitedMessages(usable, quoted, time)
+  if (quotedIds.length) {
+    // 找出回查落空的 msgid（编造的、或库里其他消息的 id），逐条指出具体是哪个
+    const byId = new Map<string, boolean>()
+    for (const record of usable) {
+      byId.set(record.messageId || record.id, true)
+      byId.set(record.id, true)
+    }
+    const miss = quotedIds.filter((id) => !byId.get(id))
+    if (miss.length) {
+      log.warn(`群聊问答: 丢弃 ${miss.length}/${quotedIds.length} 个引用 msgid（回查落空，可能是编造的 id）: ${miss.join(', ')}`)
+    }
   }
 
   return {
