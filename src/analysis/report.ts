@@ -5,7 +5,7 @@
  * - 列表前若是普通文本，必须用空行隔开，否则无法被识别
  * - 单条 markdown 消息建议不超过 2000 字符
  */
-import type { DialogueDigest, GroupAnalysisResult, HighlightLine, MessageQuote, QueryAnswerResult, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightLine, QueryAnswerResult, UserPersonaProfile } from '../types'
 import { escapeMarkdown } from '../markdown'
 
 const toArray = (value: unknown): string[] =>
@@ -108,7 +108,7 @@ export function renderDialogues(digest: DialogueDigest<HighlightLine>): string {
 }
 
 /** 把画像渲染为 markdown 文本 */
-export function renderPersona(persona: UserPersonaProfile, evidence: MessageQuote[] = []): string {
+export function renderPersona(persona: UserPersonaProfile, evidence: string[] = []): string {
   const lines: string[] = []
   lines.push(`# 🪞 用户画像 · ${escapeMarkdown(persona.username || persona.userId)}`)
   lines.push('')
@@ -128,7 +128,7 @@ export function renderPersona(persona: UserPersonaProfile, evidence: MessageQuot
   if (evidence.length) {
     lines.push('', '**📌 代表发言**')
     for (const quote of evidence) {
-      lines.push(`> **${escapeMarkdown(quote.sender || '匿名')}：**${escapeMarkdown(quote.content)}`)
+      lines.push(`> ${escapeMarkdown(quote)}`)
     }
   }
 

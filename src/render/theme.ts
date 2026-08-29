@@ -695,10 +695,6 @@ const PERSONA_PARTS = `
   white-space: pre-wrap;
   word-break: break-word;
 }
-.evidence-sender {
-  font-weight: 600;
-  color: var(--ink);
-}
 `
 
 /** 「群分析」样式表 */

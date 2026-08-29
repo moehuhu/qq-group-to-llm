@@ -57,9 +57,9 @@ async function collectMessages(
 }
 
 /**
- * 渲染成投喂给 LLM 的对话文本。模型直接从行首读取发送者与原文，
- * 无需 <msgid:…> 锚点——evidence 由模型照抄昵称与原文。
- * 锚点只在行首出现一次，所以多行正文的续行必须缩进。
+ * 渲染成投喂给 LLM 的对话文本。行首带归属标记（群/频道）与发送者昵称，
+ * 模型据此判断每句的归属；evidence 由模型照抄原文，不含发送者（画像针对同一人）。
+ * 多行正文的续行必须缩进，否则会被当成另一条消息。
  */
 function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
   return messages.map((message) => {
@@ -80,7 +80,19 @@ function parsePersona(ctx: Context, record?: PersonaRecord): UserPersonaProfile 
   const log = logger(ctx)
   if (!record?.persona) return null
   try {
-    return load(record.persona) as UserPersonaProfile
+    const profile = load(record.persona) as UserPersonaProfile
+    // 规整旧缓存：evidence 曾存过 msgid 字符串与 {sender, content} 对象，统一压成原文数组
+    if (Array.isArray(profile.evidence)) {
+      profile.evidence = (profile.evidence as unknown[])
+        .map((item) => {
+          const text = item && typeof item === 'object' ? String((item as { content?: unknown })?.content ?? '') : String(item ?? '')
+          return text.trim()
+        })
+        .filter(Boolean)
+    } else {
+      profile.evidence = []
+    }
+    return profile
   } catch (error) {
     log.warn(`解析已存画像失败 (${record.id})，将忽略:`, error)
     return null
@@ -165,16 +177,17 @@ export async function resolvePersona(
     }
   }
 
-  // 丢弃缺 sender 或 content 的引用，只保留能展示的（发送者 + 原文）
-  const rawEvidence = Array.isArray(generated.evidence) ? generated.evidence : []
+  // 丢弃空的原话，只保留能展示的引用（画像针对同一人，只保留原文，不含发送者）
+  const rawEvidence = (Array.isArray(generated.evidence) ? generated.evidence : []) as unknown[]
   const evidence = rawEvidence
-    .map((item) => ({
-      sender: String(item?.sender ?? '').trim(),
-      content: String(item?.content ?? '').trim(),
-    }))
-    .filter((item) => item.sender && item.content)
+    .map((item) => {
+      // 兼容旧形态 {sender, content}：只取 content
+      const text = item && typeof item === 'object' ? String((item as { content?: unknown })?.content ?? '') : String(item ?? '')
+      return text.trim()
+    })
+    .filter(Boolean)
   if (evidence.length < rawEvidence.length) {
-    log.warn(`${id} 的画像有 ${rawEvidence.length - evidence.length} 条证据缺 sender 或 content，已丢弃`)
+    log.warn(`${id} 的画像有 ${rawEvidence.length - evidence.length} 条证据为空，已丢弃`)
   }
 
   const profile: UserPersonaProfile = { ...generated, evidence }

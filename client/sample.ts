@@ -11,7 +11,7 @@
  * 高光对话的样本是「已带发送者与原文」的形态，
  * 与真正出图前的那一步对齐——预览只关心版面，不关心回查。
  */
-import type { DialogueDigest, GroupAnalysisResult, MessageQuote, ResolvedHighlightLine, UserPersonaProfile } from '../src/types'
+import type { DialogueDigest, GroupAnalysisResult, ResolvedHighlightLine, UserPersonaProfile } from '../src/types'
 
 /** 一条什么都占齐的消息：引用 + 提及 + 图片 + 合并转发 */
 const RICH_MESSAGE = [
@@ -77,10 +77,7 @@ export const SAMPLE_DIALOGUES: DialogueDigest<ResolvedHighlightLine> = {
   ],
 }
 
-export const SAMPLE_EVIDENCE: MessageQuote[] = [
-  { sender: '张三', content: RICH_MESSAGE },
-  { sender: '张三', content: '这个方案我同意，先按这个来' },
-]
+export const SAMPLE_EVIDENCE: string[] = [RICH_MESSAGE, '这个方案我同意，先按这个来']
 
 export const SAMPLE_PERSONA: UserPersonaProfile = {
   userId: '10001',

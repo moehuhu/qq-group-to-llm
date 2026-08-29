@@ -224,7 +224,7 @@ llmModelHighlightDialogues: cheap
 
 每次生成都只依据 `personaLookbackDays` 天内的最新发言，不把已有结论回喂给模型，也不与旧画像做字段合并——结果完全由这批记录决定。画像以 YAML 存进 `qq_group_personas` 表，仅用于缓存复用；当发言条数不足或模型调用失败、本次无法产出时，会返回库里的旧画像并说明原因，而不是把它抹掉。
 
-投喂给模型的每条消息行首带 `群:xxx` / `频道:xxx` 归属标记与发送者昵称，模型在 `evidence` 里逐字照抄发送者昵称与原文（`sender` + `content`），出图直接展示，不再按 id 回查。
+投喂给模型的每条消息行首带 `群:xxx` / `频道:xxx` 归属标记与发送者昵称，模型在 `evidence` 里逐字照抄该用户的原文，出图直接展示，不再按 id 回查。画像针对同一人，`evidence` 只存原文、不带发送者。
 
 默认汇总该用户在所有已记录频道的发言，`personaOnlyCurrentGroup` 可限制为当前频道；`personaCacheDays` 天内复用已有结果，`-f` 跳过。看他人的画像需要 `personaViewAuthority` 级权限（默认 3）。
 

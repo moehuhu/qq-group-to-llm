@@ -165,8 +165,6 @@ export const USER_PERSONA =
 聊天记录：
 {messages}
 
-聊天记录里每条消息行首的 \`群:xxx\` / \`频道:xxx\` 标记后面的名字就是发送者昵称。
-
 请严格按以下 YAML 格式返回，并放在 markdown 代码块中：
 \`\`\`yaml
 - userId: "{userId}"
@@ -180,11 +178,7 @@ export const USER_PERSONA =
   communicationStyle: |-
     表达风格与情绪倾向，100 字以内
   evidence:
-    - sender: "发送者昵称"
-      content: |-
-        这条发言的原文，有几行照抄几行
+    - "这条发言的原文，有几行照抄几行"
+    - "第二条原话"
 \`\`\`
-
-格式上有几处容易写错，请特别注意：
-- content 是块标量：原话有几行就照抄几行，但每一行都必须缩进到和第一行完全相同的列
 `

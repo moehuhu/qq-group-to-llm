@@ -139,6 +139,6 @@ export interface UserPersonaProfile {
   interests: string[]
   /** 表达风格与情绪倾向 */
   communicationStyle: string
-  /** 支撑结论的原话（发送者 + 原文），由模型直接从聊天记录照抄 */
-  evidence: MessageQuote[]
+  /** 支撑结论的原话，由模型直接从聊天记录照抄，不含发送者（画像针对同一人） */
+  evidence: string[]
 }
