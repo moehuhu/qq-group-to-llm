@@ -21,7 +21,10 @@ export const TOPIC =
 群聊记录：
 {messages}
 
-请严格按以下 YAML 格式返回，并放在 markdown 代码块中：
+请严格按以下 YAML 格式返回，并放在 markdown 代码块中。格式上有两处容易写错，请特别注意：
+- 每条message以 \`- \` 开头，不要用 \`1.\` \`2.\` 这样的编号
+- 每条message是块标量：原话有几行就照抄几行，但每一行都必须缩进到和第一行完全相同的列
+
 \`\`\`yaml
 - topic: "话题名称"
   contributors:
