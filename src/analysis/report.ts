@@ -137,14 +137,14 @@ export function renderPersona(persona: UserPersonaProfile, evidence: string[] = 
 }
 
 /**
- * 把问答渲染为 markdown。
+ * 把问答渲染为普通文本，不做 markdown 转义，原文与换行照常保留。
  * 引用消息由模型直接返回发送者与原文，但按需求不展示引用来源，只输出回答正文。
  */
 export function renderQueryAnswer(result: QueryAnswerResult): string {
   const lines: string[] = []
-  lines.push(`**回答**`)
+  lines.push(`回答：`)
   lines.push('')
-  lines.push(escapeMarkdown(result.answer?.trim() || '（无回答）'))
+  lines.push(result.answer?.trim() || '（无回答）')
   lines.push('')
 
   while (lines.length && lines[lines.length - 1] === '') lines.pop()

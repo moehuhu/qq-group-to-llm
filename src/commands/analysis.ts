@@ -1,7 +1,6 @@
 import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
-import { toMarkdownMessage } from '../markdown'
 import { analyzeGroup, answerQuery, fetchMessages } from '../analysis'
 import { renderQueryAnswer } from '../analysis/report'
 import { resolveTarget } from './target'
@@ -76,7 +75,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
       try {
         if (question) {
           const result = await answerQuery(ctx, config, messages, target, question)
-          return toMarkdownMessage(renderQueryAnswer(result))
+          return renderQueryAnswer(result)
         }
         const result = await analyzeGroup(ctx, config, messages, target)
         if (config.cacheMinutes > 0) {

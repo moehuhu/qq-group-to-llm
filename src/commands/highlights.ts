@@ -1,7 +1,6 @@
 import { Context, Session } from 'koishi'
 import type { Config } from '../config'
 import { logger } from '../logger'
-import { toMarkdownMessage } from '../markdown'
 import { analyzeDialogues, fetchMessages } from '../analysis'
 import { resolveTarget } from './target'
 import { renderDialoguesHtml, renderHtmlToImage } from '../render'
