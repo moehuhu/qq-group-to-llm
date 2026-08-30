@@ -136,10 +136,10 @@ export const USER_PERSONA =
 {
   "userId": "{userId}",
   "username": "{username}",
-  "summary": "整体印象，200 字以内",
+  "summary": "整体印象",
   "keyTraits": ["性格特质"],
   "interests": ["关注的主题或爱好"],
-  "communicationStyle": "表达风格与情绪倾向，100 字以内",
+  "communicationStyle": "表达风格与情绪倾向",
   "evidence": ["第一条原话", "第二条原话"]
 }
 \`\`\`
