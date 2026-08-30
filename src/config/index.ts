@@ -203,7 +203,7 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('金句提取提示词。占位符：{messages} {maxGoldenQuotes} {groupName} {timeRange}')
       .default(prompts.GOLDEN_QUOTES),
     promptHighlightDialogues: Schema.string().role('textarea')
-      .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂时每条消息行首自带 [头像 地址] 标记，模型据此在返回的 lines 里填 avatar 字段')
+      .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂的 {messages} 是 JSON 数组，有头像的消息带 avatar 字段，模型据此在返回的 lines 里填 avatar')
       .default(prompts.HIGHLIGHT_DIALOGUES),
     promptQuery: Schema.string().role('textarea')
       .description('自然语言提问提示词，返回 JSON（answer 回答 + cited 引用的消息，含发送者昵称与原文）。占位符：{messages} {query} {groupName} {timeRange} {currentTime}')

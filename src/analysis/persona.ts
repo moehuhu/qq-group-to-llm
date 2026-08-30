@@ -5,7 +5,7 @@ import { logger } from '../logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
-import { layoutRecord } from '../transcript'
+import { toPromptJson } from '../transcript'
 import type { UserPersonaProfile } from '../types'
 
 export interface PersonaTarget {
@@ -57,18 +57,11 @@ async function collectMessages(
 }
 
 /**
- * 渲染成投喂给 LLM 的对话文本。行首带归属标记（群/频道）与发送者昵称，
+ * 渲染成投喂给 LLM 的 JSON 数组字符串。每条消息带归属标记（群/频道）与发送者昵称，
  * 模型据此判断每句的归属；evidence 由模型照抄原文，不含发送者（画像针对同一人）。
- * 多行正文的续行必须缩进，否则会被当成另一条消息。
  */
 function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
-  return messages.map((message) => {
-    const scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
-    return layoutRecord(
-      `[${time.dateTime(message.timestamp)}] ${scope} ${message.username || message.userId}: `,
-      message.content,
-    )
-  }).join('\n')
+  return toPromptJson(messages, time, { withScope: true, withDate: true })
 }
 
 async function loadRecord(ctx: Context, id: string): Promise<PersonaRecord | undefined> {

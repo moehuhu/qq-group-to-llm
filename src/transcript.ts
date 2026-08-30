@@ -3,27 +3,10 @@
  *
  * 这里只管「怎么排」：正文一个字都不动——清洗归 text.ts，措辞归提示词模板。
  */
+import type { MessageRecord } from './database'
+import type { TimeFormatter } from './time'
 
-/**
- * 续行缩进。
- *
- * 对话文本有一条隐含约定：一条记录占一行，行首的 `[时间] 昵称:`
- * 把这一行的归属钉死。
- * 但一条记录的正文未必只有一行——最常见的是 QQ 的「群聊的聊天记录」（合并转发），
- * 一条消息里裹着好几个人的发言（text.ts 已经把平台那套排版压成一行一句）：
- *
- *     [群聊的聊天记录]
- *     张三: 你好
- *     李四: hello
- *
- * 原样拼进去，第二行往后就成了没有行首标记的「无主发言」，正文里的空行
- * 还会被当成记录之间的分隔。于是模型把转发里的话算到别人头上、
- * 给后面几行张冠李戴地安发言人——转发的内容越长，错得越离谱。
- *
- * 所以正文的续行一律缩进：记录永远从行首开始，缩进的行只可能是上一条的延续。
- * 这个变换可逆（去掉每个续行的四个空格即还原），正文本身没有任何增删。
- * 同一套排法在 text.ts 里再用一次：转发卡片内部的多行发言也照这个规矩缩进。
- */
+/** 续行缩进。转发卡片内部的多行发言排版还在用（text.ts），LLM 投喂已改为 JSON 结构，不再依赖它 */
 const CONTINUATION_INDENT = '    '
 
 /** 正文内部的换行。QQ 给的是 \n，\r 是别的平台或粘贴带进来的 */
@@ -36,4 +19,42 @@ const LINE_BREAK = /\r\n|\r|\n/
 export function layoutRecord(head: string, content: string | undefined | null): string {
   const [first = '', ...rest] = String(content ?? '').split(LINE_BREAK)
   return [head + first, ...rest.map((line) => CONTINUATION_INDENT + line)].join('\n')
+}
+
+export interface PromptMessageOptions {
+  /** 是否在每条里带上 avatar 字段（高光对话出图需要模型把地址照抄回去） */
+  withAvatar?: boolean
+  /** 是否在每条里带上 scope 归属字段（用户画像需要区分群/频道） */
+  withScope?: boolean
+  /** 时间戳用年月日时分秒（用户画像），否则用时分秒（群分析等） */
+  withDate?: boolean
+}
+
+/**
+ * 把消息记录排成投喂给模型的 JSON 数组字符串。
+ * 与旧的纯文本行不同，每条消息是一个独立对象，字段：
+ * - time：发言时间戳
+ * - sender：发送者昵称（没有昵称时回落为用户 ID）
+ * - content：发言原文，多行原样保留（JSON 字符串天然区分边界，不再靠缩进）
+ * - avatar：发言时的头像地址，仅在 withAvatar 且记录里有地址时输出
+ * - scope：归属标记 `群:xxx` / `频道:xxx`，仅在 withScope 时输出
+ */
+export function toPromptJson(
+  messages: MessageRecord[],
+  time: TimeFormatter,
+  options: PromptMessageOptions = {},
+): string {
+  const list = messages.map((message) => {
+    const item: Record<string, string> = {
+      time: (options.withDate ? time.dateTime : time.time)(message.timestamp),
+      sender: message.username || message.userId || '',
+      content: message.content,
+    }
+    if (options.withAvatar && message.avatar) item.avatar = message.avatar
+    if (options.withScope) {
+      item.scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
+    }
+    return item
+  })
+  return JSON.stringify(list, null, 2)
 }

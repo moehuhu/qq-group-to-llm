@@ -4,7 +4,7 @@ import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
-import { layoutRecord } from '../transcript'
+import { toPromptJson } from '../transcript'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
@@ -57,20 +57,13 @@ export function excludeUsers(messages: MessageRecord[], blocked: string[]): Mess
 }
 
 /**
- * 把消息渲染成投喂给 LLM 的文本，一条记录一段，行首是时间与发言人。
- * 正文本身可能是多行的（合并转发的「群聊的聊天记录」就是一整块），
- * 续行由 layoutRecord 缩进，免得被当成另一个人的发言。
- *
- * withAvatar 为 true 时，行首在昵称后附 `[头像 地址]` 标记，
+ * 把消息渲染成投喂给 LLM 的 JSON 数组字符串，一条记录一个对象。
+ * 字段含 time / sender / content；withAvatar 时额外带 avatar 字段，
  * 供模型把地址原样照抄进返回结果（高光对话出图用）。头像可能为空，
- * 那种情况不带标记，模型在 avatar 字段留空即可。
+ * 那种情况不带该字段，模型在 avatar 字段留空即可。
  */
 export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter, withAvatar = false): string {
-  return messages.map((message) => layoutRecord(
-    `[${time.time(message.timestamp)}] ${message.username || message.userId}` +
-    (withAvatar && message.avatar ? ` [头像 ${message.avatar}]` : '') + `: `,
-    message.content,
-  )).join('\n')
+  return toPromptJson(messages, time, { withAvatar })
 }
 
 /** 把模型返回的条目压成一句可读的摘要，日志里用它指出具体丢的是哪一条 */
@@ -259,7 +252,7 @@ export async function analyzeDialogues(
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
-  // 模型直接返回每轮的昵称、头像与原文，投喂时行首自带 [头像 地址] 标记供模型照抄
+  // 模型直接返回每轮的昵称、头像与原文，投喂时 JSON 里带 avatar 字段供模型照抄
   const messagesText = formatForPrompt(usable, time, true)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)

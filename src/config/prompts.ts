@@ -21,6 +21,8 @@ export const TOPIC =
 群聊记录：
 {messages}
 
+群聊记录是 JSON 数组，每条消息含 time（时间）、sender（发送者昵称）、content（发言原文），正文多行时 content 里用 \\n 分隔。
+
 请严格按以下 JSON 格式返回，并放在 json markdown 代码块中。每条话题是数组里的一个对象，不要用 \`1.\` \`2.\` 这样的编号；原话有多行时在字符串里用 \\n 转义，不要逐行平铺：
 
 \`\`\`json
@@ -48,6 +50,8 @@ export const GOLDEN_QUOTES =
 
 群聊记录：
 {messages}
+
+群聊记录是 JSON 数组，每条消息含 time（时间）、sender（发送者昵称）、content（发言原文）。
 
 请严格按以下 JSON 格式返回，并放在 json markdown 代码块中：
 
@@ -92,7 +96,7 @@ export const HIGHLIGHT_DIALOGUES =
 群聊记录：
 {messages}
 
-每条消息的行首格式为 \`[时间] 昵称 [头像 地址]: 原话\`，方括号 \`[头像 地址]\` 里的地址就是该发送者这条发言的头像。返回时把该地址原样抄进对应轮次的 avatar 字段即可。
+群聊记录是 JSON 数组，每条消息含 time（时间）、sender（发送者昵称）、content（发言原文）；有头像的消息还带 avatar 字段，就是该发送者这条发言的头像地址。返回时把该地址原样抄进对应轮次的 avatar 字段即可。
 
 请严格按以下 JSON 格式返回，并放在 json markdown 代码块中：
 
@@ -103,12 +107,12 @@ export const HIGHLIGHT_DIALOGUES =
     "lines": [
       {
         "sender": "发送者昵称",
-        "avatar": "该发送者行首 [头像 地址] 里的地址，原样抄写",
+        "avatar": "该发送者这条消息的 avatar 字段地址，原样抄写",
         "content": "这条发言的原文，有几行照抄几行"
       },
       {
         "sender": "发送者昵称",
-        "avatar": "该发送者行首 [头像 地址] 里的地址，原样抄写",
+        "avatar": "该发送者这条消息的 avatar 字段地址，原样抄写",
         "content": "第二条发言的原文"
       }
     ],
@@ -119,7 +123,7 @@ export const HIGHLIGHT_DIALOGUES =
 
 格式上有几处容易写错，请特别注意：
 - 每段对话是数组里的一个对象，不要用 \`1.\` \`2.\` 这样的编号
-- avatar 从该轮发送者的 \`[头像 地址]\` 标记里原样抄写，不要编造或改动；消息行首没有该标记时 avatar 留空字符串
+- avatar 从群聊记录对应消息的 avatar 字段里原样抄写，不要编造或改动；消息记录里没有 avatar 字段时 avatar 留空字符串
 - content 有多行时用 \\n 转义拼进同一个字符串，不要漏字；每段 lines 至少两条
 - 少写一个逗号、字符串没加引号，整段 JSON 都会解析失败
 
@@ -146,7 +150,7 @@ export const QUERY =
 群聊记录：
 {messages}
 
-群聊记录里每条消息的行首方括号后面的名字就是发送者昵称。
+群聊记录是 JSON 数组，每条消息含 time（时间）、sender（发送者昵称）、content（发言原文），sender 就是发送者昵称。
 
 用户问题：{query}
 
@@ -183,6 +187,8 @@ export const USER_PERSONA =
 
 聊天记录：
 {messages}
+
+聊天记录是 JSON 数组，每条消息含 time（时间）、scope（归属：群或频道）、sender（发送者昵称，即本人）、content（发言原文）。
 
 请严格按以下 JSON 格式返回，并放在 json markdown 代码块中：
 
