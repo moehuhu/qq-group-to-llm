@@ -1,5 +1,5 @@
 import { Context } from 'koishi'
-import { dump, load } from 'js-yaml'
+import { load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
@@ -79,24 +79,33 @@ async function loadRecord(ctx: Context, id: string): Promise<PersonaRecord | und
 function parsePersona(ctx: Context, record?: PersonaRecord): UserPersonaProfile | null {
   const log = logger(ctx)
   if (!record?.persona) return null
+
+  let profile: UserPersonaProfile | null = null
+  // 新格式是 JSON 字符串；旧缓存是 YAML，解析失败时回退
   try {
-    const profile = load(record.persona) as UserPersonaProfile
-    // 规整旧缓存：evidence 曾存过 msgid 字符串与 {sender, content} 对象，统一压成原文数组
-    if (Array.isArray(profile.evidence)) {
-      profile.evidence = (profile.evidence as unknown[])
-        .map((item) => {
-          const text = item && typeof item === 'object' ? String((item as { content?: unknown })?.content ?? '') : String(item ?? '')
-          return text.trim()
-        })
-        .filter(Boolean)
-    } else {
-      profile.evidence = []
+    profile = JSON.parse(record.persona) as UserPersonaProfile
+  } catch {
+    try {
+      profile = load(record.persona) as UserPersonaProfile
+    } catch (error) {
+      log.warn(`解析已存画像失败 (${record.id})，将忽略:`, error)
+      return null
     }
-    return profile
-  } catch (error) {
-    log.warn(`解析已存画像失败 (${record.id})，将忽略:`, error)
-    return null
   }
+  if (!profile) return null
+
+  // 规整旧缓存：evidence 曾存过 msgid 字符串与 {sender, content} 对象，统一压成原文数组
+  if (Array.isArray(profile.evidence)) {
+    profile.evidence = (profile.evidence as unknown[])
+      .map((item) => {
+        const text = item && typeof item === 'object' ? String((item as { content?: unknown })?.content ?? '') : String(item ?? '')
+        return text.trim()
+      })
+      .filter(Boolean)
+  } else {
+    profile.evidence = []
+  }
+  return profile
 }
 
 const isFresh = (record: PersonaRecord | undefined, cacheDays: number) =>
@@ -203,7 +212,7 @@ export async function resolvePersona(
     userId: target.userId,
     username,
     avatar,
-    persona: dump(profile, { indent: 2, lineWidth: -1, noRefs: true }),
+    persona: JSON.stringify(profile),
     lastAnalysisAt: now,
     updatedAt: now,
   }])

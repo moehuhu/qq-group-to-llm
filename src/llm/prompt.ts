@@ -13,93 +13,182 @@ export function findLeftovers(prompt: string): string[] {
   return [...new Set(prompt.match(/\{[a-zA-Z]\w*\}/g) ?? [])]
 }
 
-/** 取出 markdown 代码块中的 YAML，找不到时返回 null */
-export function extractYaml(raw: string): string | null {
-  return raw.match(/```ya?ml\s*([\s\S]*?)\s*```/)?.[1] ?? null
+/** 取出 markdown 代码块中的 JSON，找不到时返回 null */
+export function extractJson(raw: string): string | null {
+  // 优先取 ```json 代码块
+  const fenced = raw.match(/```json\s*([\s\S]*?)\s*```/i)?.[1]
+  if (fenced) return fenced.trim()
+  // 其次退而求其次：任意的 ``` 代码块
+  const generic = raw.match(/```\w*\s*([\s\S]*?)\s*```/)?.[1]
+  if (generic) return generic.trim()
+  // 都没有代码块：从第一个 { 或 [ 截到与之配对的 } 或 ]
+  return extractTopLevel(raw)
 }
 
 /**
- * 块标量头：`detail: |-`、`- content: >`、`- |` 都算。
- * 捕获缩进（含 `- ` 前缀，取到键所在的列）与显式缩进指示符。
+ * 从一段文本里截出最外层括号配对的 JSON 片段。
+ * 模型偶尔会不套代码块直接吐 JSON，或者前面先垫一句介绍的话。
  */
-const BLOCK_HEADER = /^(\s*(?:-\s+)*)(?:.*?:\s*)?[|>][+-]?(\d*)\s*$/
-
-/** markdown 列表标记：`1.`、`2)`、`*`、`+`——`-` 本身就是合法 YAML，不动 */
-const LIST_MARKER = /^(\s*)(\d+[.)]|[*+])(\s+)/
-
-/**
- * 把 markdown 列表标记换成 `- `。
- * 模型偶尔用 `1. title:` 给顶层列表编号，而它下面几行的缩进是照着 `1. ` 的宽度对齐的，
- * 所以用空格把 `-` 补到一样宽，后面整块内容都不用动。
- */
-function normalizeListMarker(line: string): string {
-  const marker = line.match(LIST_MARKER)
-  if (!marker) return line
-  const width = marker[2].length + marker[3].length
-  return marker[1] + '-' + ' '.repeat(width - 1) + line.slice(marker[0].length)
-}
-
-/** 缩进不足的那行是不是新的键或列表项——是的话说明块标量本来就该在这里结束 */
-function looksStructural(text: string): boolean {
-  return /^-(\s|$)/.test(text) || /^(?:"[^"]*"|'[^']*'|[^\s"'#][^:]*):(\s|$)/.test(text)
-}
-
-function indentOf(line: string): number {
-  return line.length - line.trimStart().length
-}
-
-/**
- * 修正模型写坏的 YAML 格式，只处理两类反复出现的毛病：
- *
- * 1. 块标量的续行缩进不够——抄多行原话时只给第一行正确缩进，
- *    后面几行随手少打几个空格，js-yaml 报 `bad indentation of a sequence entry`
- * 2. 顶层列表用 markdown 的 `1.` 编号而不是 `- `，报 `bad indentation of a mapping entry`
- *
- * 块标量内部的文本一律照原样保留：那里的 `1.`、缩进都是原话的一部分。
- */
-export function repairYaml(yaml: string): string {
-  const lines = yaml.split('\n')
-  const out: string[] = []
-  let i = 0
-
-  while (i < lines.length) {
-    const line = normalizeListMarker(lines[i])
-    const header = line.match(BLOCK_HEADER)
-    out.push(line)
-    i++
-    if (!header) continue
-
-    const keyIndent = header[1].length
-    // 显式指示符（`|2`）直接定基准，否则由块内第一条非空行决定
-    let base = header[2] ? keyIndent + Number(header[2]) : -1
-
-    while (i < lines.length) {
-      const line = lines[i]
-      if (!line.trim()) {
-        out.push(line)
-        i++
-        continue
-      }
-      const indent = indentOf(line)
-      if (base < 0) {
-        // 第一条非空行顶到了键的同列甚至更左，块就成了空的，补到键右侧两格
-        base = indent > keyIndent ? indent : keyIndent + 2
-        out.push(indent > keyIndent ? line : ' '.repeat(base) + line.trim())
-        i++
-        continue
-      }
-      if (indent >= base) {
-        out.push(line)
-        i++
-        continue
-      }
-      if (looksStructural(line.trim())) break
-      out.push(' '.repeat(base) + line.trim())
-      i++
+function extractTopLevel(raw: string): string | null {
+  const start = raw.search(/[[{]/)
+  if (start < 0) return null
+  const open = raw[start]
+  const close = open === '[' ? ']' : '}'
+  let depth = 0
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  for (let i = start; i < raw.length; i++) {
+    const c = raw[i]
+    if (quote) {
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      continue
+    }
+    if (c === open) depth++
+    else if (c === close) {
+      depth--
+      if (depth === 0) return raw.slice(start, i + 1)
     }
   }
+  return null
+}
 
-  return out.join('\n')
+const isWs = (c: string) => c === ' ' || c === '\t' || c === '\n' || c === '\r'
+
+/** 去掉 JSON 里的行注释与块注释（模型偶尔会带 JSONC 风格的注释），字符串内容不动 */
+function stripComments(raw: string): string {
+  let out = ''
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]
+    if (quote) {
+      out += c
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      out += c
+      continue
+    }
+    if (c === '/' && raw[i + 1] === '/') {
+      while (i < raw.length && raw[i] !== '\n') i++
+      continue
+    }
+    if (c === '/' && raw[i + 1] === '*') {
+      i += 2
+      while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) i++
+      i++
+      continue
+    }
+    out += c
+  }
+  return out
+}
+
+/** 把单引号字符串转成双引号字符串（内部的 " 一并转义），兼容模型偷懒用单引号的情况 */
+function normalizeQuotes(raw: string): string {
+  let out = ''
+  let single = false
+  let double = false
+  let escaped = false
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]
+    if (single) {
+      if (escaped) {
+        escaped = false
+        out += c
+        continue
+      }
+      if (c === '\\') {
+        escaped = true
+        out += c
+        continue
+      }
+      if (c === "'") {
+        single = false
+        out += '"'
+        continue
+      }
+      if (c === '"') {
+        out += '\\"'
+        continue
+      }
+      out += c
+      continue
+    }
+    if (double) {
+      out += c
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') double = false
+      continue
+    }
+    if (c === "'") {
+      single = true
+      out += '"'
+      continue
+    }
+    if (c === '"') {
+      double = true
+      out += c
+      continue
+    }
+    out += c
+  }
+  return out
+}
+
+/** 去掉数组/对象末尾悬着的尾逗号，字符串内容不动 */
+function stripTrailingCommas(raw: string): string {
+  let out = ''
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]
+    if (quote) {
+      out += c
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      out += c
+      continue
+    }
+    if (c === '}' || c === ']') {
+      // 结构闭合前悬着的逗号是模型常犯的错，直接去掉
+      let j = out.length - 1
+      while (j >= 0 && isWs(out[j])) j--
+      if (out[j] === ',') out = out.slice(0, j) + out.slice(j + 1)
+    }
+    out += c
+  }
+  return out
+}
+
+/**
+ * 修正模型写坏的 JSON 格式，只处理几类反复出现的毛病：
+ *
+ * 1. 行注释 `//` 与块注释 `/* ... *\/`（模型常带 JSONC 风格的注释）
+ * 2. 单引号字符串——转成双引号，并转义字符串内部的 `"`
+ * 3. 数组/对象末尾悬着的尾逗号，JSON.parse 直接报 `Unexpected token`
+ *
+ * 字符串内部的文本一律照原样保留（只调整引号与转义），
+ * 里面的 `//`、缩进、多行内容都是原话的一部分。
+ */
+export function repairJson(json: string): string {
+  return stripTrailingCommas(normalizeQuotes(stripComments(json)))
 }
 
 /** 把接口返回的 usage 渲染成一行日志 */

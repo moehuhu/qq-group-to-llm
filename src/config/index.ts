@@ -206,7 +206,7 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂时每条消息行首自带 [头像 地址] 标记，模型据此在返回的 lines 里填 avatar 字段')
       .default(prompts.HIGHLIGHT_DIALOGUES),
     promptQuery: Schema.string().role('textarea')
-      .description('自然语言提问提示词，返回 YAML（answer 回答 + cited 引用的消息，含发送者昵称与原文）。占位符：{messages} {query} {groupName} {timeRange} {currentTime}')
+      .description('自然语言提问提示词，返回 JSON（answer 回答 + cited 引用的消息，含发送者昵称与原文）。占位符：{messages} {query} {groupName} {timeRange} {currentTime}')
       .default(prompts.QUERY),
     promptUserPersona: Schema.string().role('textarea')
       .description('用户画像提示词。占位符：{messages} {username} {userId} {lookbackDays}')

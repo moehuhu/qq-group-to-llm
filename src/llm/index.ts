@@ -1,10 +1,9 @@
 import { Context, Service } from 'koishi'
-import { load } from 'js-yaml'
 import type { Config, LLMModelConfig } from '../config'
 import { logger } from '../logger'
 import type { AnalysisContext, GoldenQuote, HighlightDialogue, QueryAnswer, SummaryTopic, UserPersonaProfile } from '../types'
 import {
-  describeError, extractYaml, fill, findLeftovers, formatUsage, isRetryable, repairYaml,
+  describeError, extractJson, fill, findLeftovers, formatUsage, isRetryable, repairJson,
 } from './prompt'
 
 /** 插件提供的所有 LLM 任务 */
@@ -300,40 +299,40 @@ export class LLMService extends Service {
     return { content: parts.join(''), usage }
   }
 
-  /** 调用并解析 markdown 代码块中的 YAML */
-  private async chatYaml<T>(taskId: LLMTaskId, prompt: string): Promise<T[]> {
+  /** 调用并解析 markdown 代码块中的 JSON */
+  private async chatJson<T>(taskId: LLMTaskId, prompt: string): Promise<T[]> {
     const task = TASK_NAMES[taskId]
     const raw = await this.chat(taskId, prompt)
-    const yaml = extractYaml(raw)
-    if (yaml === null) {
-      this.log.warn(`[${task}] 未返回 YAML 代码块，完整响应:\n${raw}`)
+    const json = extractJson(raw)
+    if (json === null) {
+      this.log.warn(`[${task}] 未返回 JSON 代码块，完整响应:\n${raw}`)
       throw new Error(`LLM 未按格式返回结果（${task}）`)
     }
 
     let data: T | T[]
     try {
-      data = load(yaml) as T | T[]
+      data = JSON.parse(json) as T | T[]
     } catch (error) {
-      // 缩进、列表标记这类格式毛病模型偶尔会犯，先修一遍再试
-      const repaired = repairYaml(yaml)
+      // 注释、单引号、尾逗号这类格式毛病模型偶尔会犯，先修一遍再试
+      const repaired = repairJson(json)
       let recovered: T | T[] | undefined
-      if (repaired !== yaml) {
+      if (repaired !== json) {
         try {
-          recovered = load(repaired) as T | T[]
+          recovered = JSON.parse(repaired) as T | T[]
         } catch {
           // 修完还是解析不了，说明坏在别处，按原始错误报出去
         }
       }
       if (recovered === undefined) {
-        this.log.error(`[${task}] YAML 解析失败，完整 YAML:\n${yaml}`)
+        this.log.error(`[${task}] JSON 解析失败，完整 JSON:\n${json}`)
         throw error
       }
-      this.log.warn(`[${task}] YAML 格式有误，已自动修正后解析成功。原始 YAML:\n${yaml}`)
+      this.log.warn(`[${task}] JSON 格式有误，已自动修正后解析成功。原始 JSON:\n${json}`)
       data = recovered
     }
 
     if (!data) {
-      this.log.warn(`[${task}] YAML 解析结果为空`)
+      this.log.warn(`[${task}] JSON 解析结果为空`)
       return []
     }
     const list = Array.isArray(data) ? data : [data]
@@ -342,7 +341,7 @@ export class LLMService extends Service {
   }
 
   async summarizeTopics(messages: string, context: AnalysisContext): Promise<SummaryTopic[]> {
-    return this.chatYaml<SummaryTopic>('topic', fill(this.config.promptTopic, {
+    return this.chatJson<SummaryTopic>('topic', fill(this.config.promptTopic, {
       ...context,
       messages,
       maxTopics: String(this.config.maxTopics),
@@ -351,7 +350,7 @@ export class LLMService extends Service {
 
   /** 挑选单句成立的金句，模型直接返回昵称与原文，原文不再按 id 回查 */
   async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<GoldenQuote[]> {
-    return this.chatYaml<GoldenQuote>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
+    return this.chatJson<GoldenQuote>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
       ...context,
       messages,
       maxGoldenQuotes: String(this.config.maxGoldenQuotes),
@@ -367,7 +366,7 @@ export class LLMService extends Service {
     messages: string,
     context: AnalysisContext,
   ): Promise<HighlightDialogue[]> {
-    return this.chatYaml<HighlightDialogue>('highlightDialogues', fill(this.config.promptHighlightDialogues, {
+    return this.chatJson<HighlightDialogue>('highlightDialogues', fill(this.config.promptHighlightDialogues, {
       ...context,
       messages,
       maxHighlightDialogues: String(this.config.maxHighlightDialogues),
@@ -384,7 +383,7 @@ export class LLMService extends Service {
     username: string
     messages: string
   }): Promise<UserPersonaProfile | null> {
-    const profiles = await this.chatYaml<UserPersonaProfile>('userPersona', fill(this.config.promptUserPersona, {
+    const profiles = await this.chatJson<UserPersonaProfile>('userPersona', fill(this.config.promptUserPersona, {
       messages: input.messages,
       userId: input.userId,
       username: input.username,
@@ -401,7 +400,7 @@ export class LLMService extends Service {
 
   /** 自然语言问答。返回回答与所引用的消息（发送者 + 原文），供调用方直接展示 */
   async answerQuery(messages: string, context: AnalysisContext): Promise<QueryAnswer> {
-    const results = await this.chatYaml<QueryAnswer>('query', fill(this.config.promptQuery, { ...context, messages }))
+    const results = await this.chatJson<QueryAnswer>('query', fill(this.config.promptQuery, { ...context, messages }))
     const result = results[0]
     if (!result?.answer?.trim()) {
       this.log.warn('[群聊问答] 结果缺少 answer 字段，视为无效')

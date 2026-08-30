@@ -18,7 +18,7 @@ export interface MessageRecord {
   messageId: string
 }
 
-/** 一条持久化的用户画像，persona 字段存 YAML 文本，仅用于缓存复用与展示 */
+/** 一条持久化的用户画像，persona 字段存 JSON 文本（旧缓存可能是 YAML），仅用于缓存复用与展示 */
 export interface PersonaRecord {
   /** `平台:用户 ID` */
   id: string
