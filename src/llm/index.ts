@@ -240,15 +240,18 @@ export class LLMService extends Service {
     let buffer = ''
     let firstChunkAt = 0
 
-    // 每 120 秒输出一次进度：当前已输出字数 + 输出速度（字/秒）
+    // 每 120 秒输出一次进度：当前已输出字数 + 输出速度（字/秒）+ 段落开头 100 字
     let chars = 0
     let speedBaseAt = startedAt
     let speedBaseChars = 0
+    let preview = ''
     const progress = setInterval(() => {
       const now = Date.now()
       const elapsed = now - speedBaseAt
       const speed = elapsed > 0 ? (chars - speedBaseChars) / (elapsed / 1000) : 0
-      this.log.info(`[${task}] 流式进度：已输出 ${chars} 字，速度 ${speed.toFixed(1)} 字/秒`)
+      const head = preview.slice(0, 100).replace(/\s+/g, ' ').trim()
+      this.log.info(`[${task}] 流式进度：已输出 ${chars} 字，速度 ${speed.toFixed(1)} 字/秒` +
+        (head ? `，段落开头 100 字：${head}` : ''))
       speedBaseAt = now
       speedBaseChars = chars
     }, 120000)
@@ -287,6 +290,8 @@ export class LLMService extends Service {
             }
             parts.push(delta)
             chars += delta.length
+            // 只攒前 100 字用于进度预览，避免重复拼接全部内容
+            if (preview.length < 100) preview += delta.slice(0, 100 - preview.length)
           }
           if (chunk?.usage) usage = chunk.usage
         }
