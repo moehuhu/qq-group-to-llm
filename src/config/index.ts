@@ -141,7 +141,7 @@ export const Config: Schema<Config> = Schema.intersect([
       apiKey: Schema.string().required().role('secret').description('API Key'),
       model: Schema.string().required().description('模型名称'),
       temperature: Schema.number().default(1).min(0).max(2).step(0.1).description('采样温度'),
-      concurrency: Schema.number().default(2).min(1).max(5).step(1)
+      concurrency: Schema.number().default(1).min(1).step(1)
         .description('该模型同时在飞的请求数上限，超出的排队等待。不同厂商对并发的限制不一样，想提高某模型的利用率就在这里单独调大'),
     }).description('一个命名模型'))
       .required()
