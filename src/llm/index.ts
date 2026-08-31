@@ -1,7 +1,7 @@
 import { Context, Service } from 'koishi'
 import type { Config, LLMModelConfig } from '../config'
 import { logger } from '../logger'
-import type { AnalysisContext, GoldenQuote, HighlightDialogue, QueryAnswer, SummaryTopic, UserPersonaProfile } from '../types'
+import type { AnalysisContext, GoldenQuote, GroupSummary, HighlightDialogue, QueryAnswer, UserPersonaProfile } from '../types'
 import {
   describeError, extractJson, fill, findLeftovers, formatUsage, isRetryable, repairJson,
 } from './prompt'
@@ -25,7 +25,7 @@ const TASK_MODEL_FIELD: Record<LLMTaskId, keyof Config> = {
 
 /** 任务 → 日志里用的名字 */
 const TASK_NAMES: Record<LLMTaskId, string> = {
-  topic: '话题总结',
+  topic: '群分析',
   goldenQuotes: '金句提取',
   highlightDialogues: '高光对话',
   query: '群聊问答',
@@ -345,12 +345,22 @@ export class LLMService extends Service {
     return list
   }
 
-  async summarizeTopics(messages: string, context: AnalysisContext): Promise<SummaryTopic[]> {
-    return this.chatJson<SummaryTopic>('topic', fill(this.config.promptTopic, {
+  /**
+   * 话题与金句在同一次请求里返回。投喂的消息只有一份（无法再按任务分开屏蔽），
+   * 返回的金句与话题都基于同一份记录。模型没返回 quotes 字段时按空数组处理。
+   */
+  async analyzeGroupSummary(messages: string, context: AnalysisContext): Promise<GroupSummary> {
+    const results = await this.chatJson<GroupSummary>('topic', fill(this.config.promptTopic, {
       ...context,
       messages,
       maxTopics: String(this.config.maxTopics),
+      maxGoldenQuotes: String(this.config.maxGoldenQuotes),
     }))
+    const result = results[0]
+    return {
+      topics: Array.isArray(result?.topics) ? result.topics : [],
+      quotes: Array.isArray(result?.quotes) ? result.quotes : [],
+    }
   }
 
   /** 挑选单句成立的金句，模型直接返回昵称与原文，原文不再按 id 回查 */

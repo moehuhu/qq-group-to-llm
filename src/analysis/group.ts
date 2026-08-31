@@ -15,7 +15,6 @@ import type {
   GroupAnalysisResult,
   MessageQuote,
   QueryAnswerResult,
-  SummaryTopic,
 } from '../types'
 export interface AnalysisTarget {
   channelId: string
@@ -139,15 +138,13 @@ export async function analyzeGroup(
   const log = logger(ctx)
   const startedAt = Date.now()
 
-  // 话题与金句的屏蔽名单是分开的：可以允许某人进话题和活跃榜，但不收他的金句
+  // 话题与金句在同一次模型请求里返回、共用同一份投喂消息，无法再按任务分开屏蔽。
+  // quoteUserFilter 退化为结果层的昵称拦截：投喂时被屏蔽者的发言照常进入，
+  // 模型返回的金句若把话安到被屏蔽者头上（昵称张冠李戴或转述），就在结果层剔除。
   const analysisMessages = excludeUsers(messages, config.analysisUserFilter)
-  const quoteMessages = excludeUsers(messages, config.quoteUserFilter)
   const hidden = messages.length - analysisMessages.length
   if (hidden) {
     log.info(`群分析屏蔽了 ${config.analysisUserFilter.length} 个用户的 ${hidden} 条发言`)
-  }
-  if (messages.length !== quoteMessages.length) {
-    log.info(`金句屏蔽了 ${messages.length - quoteMessages.length} 条发言`)
   }
 
   const time = resolveTimeFormatter(ctx, config.timezone)
@@ -157,33 +154,41 @@ export async function analyzeGroup(
 
   log.info(`开始群分析: ${context.groupName}，${analysisMessages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
-  /** 任一子任务失败不应拖垮整份报告 */
-  const settle = async <T>(task: () => Promise<T[]>, name: string): Promise<T[]> => {
+  /** 模型调用失败不应让报告整个失败，留空即可 */
+  const settle = async <T>(task: () => Promise<T>, name: string, fallback: T): Promise<T> => {
     try {
       return await task()
     } catch (error) {
       log.warn(`${name}失败，该部分将留空:`, error)
-      return []
+      return fallback
     }
   }
 
-  // 两个子任务一起发出，实际同时在飞几个由 LLMService 的并发闸门说了算。
-  // 这里不自己再控一层并发——两处各管一半的话，真实并发数就说不清了。
+  // 话题与金句在同一次模型请求里返回，只投喂一份消息。
   // 高光对话不在这里抽取，它由独立的「高光对话」命令负责。
   // 金句由模型直接返回昵称与原文，投喂普通对话格式即可，无需 <msgid:…> 锚点
-  const [topics, quotes] = await Promise.all([
-    settle<SummaryTopic>(() => ctx.qqGroupLlm.summarizeTopics(messagesText, context), '话题总结'),
-    config.maxGoldenQuotes > 0
-      ? settle(() => ctx.qqGroupLlm.analyzeGoldenQuotes(
-        formatForPrompt(quoteMessages, time), buildContext(quoteMessages, target, time, query)), '金句提取')
-      : Promise.resolve([]),
-  ])
+  const summary = await settle(
+    () => ctx.qqGroupLlm.analyzeGroupSummary(messagesText, context),
+    '话题与金句',
+    { topics: [], quotes: [] },
+  )
+  const topics = summary.topics
+  const quotes = summary.quotes
 
   // 模型偶尔会漏字段，缺主键的条目直接丢弃，避免污染报告
   const usableTopics = topics.filter((topic) => topic?.topic)
+  // 金句按昵称做结果层拦截：quoteUserFilter 填的是用户 ID，而模型只认昵称，
+  // 先建立 userId → 昵称 的映射，再剔除把话安到被屏蔽者头上的金句
+  const quoteBlockedNames = new Set(
+    analysisMessages
+      .filter((message) => config.quoteUserFilter.includes(message.userId ?? ''))
+      .map((message) => message.username)
+      .filter(Boolean),
+  )
   const usableQuotes = quotes
     .map((item) => normalizeQuote(item))
     .filter((item): item is GoldenQuote => !!item)
+    .filter((quote) => !quoteBlockedNames.has(quote.sender))
     .slice(0, config.maxGoldenQuotes)
 
   // 逐条记录被丢弃的话题与金句，日志里指出具体是哪条、为什么丢
@@ -204,6 +209,10 @@ export async function analyzeGroup(
     const quote = normalizeQuote(item)
     if (!quote) {
       droppedDetails.push(`金句第 ${index + 1} 条：缺 sender 或 content，无法展示`)
+      continue
+    }
+    if (quoteBlockedNames.has(quote.sender)) {
+      droppedDetails.push(`金句第 ${index + 1} 条「${summarizeDropped(quote.content)}」：sender 属于 quoteUserFilter 屏蔽的用户`)
       continue
     }
     quoteRank += 1

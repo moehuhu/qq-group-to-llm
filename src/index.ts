@@ -31,8 +31,8 @@ export function apply(ctx: Context, config: Config) {
   const log = logger(ctx)
   log.info(`插件启动 | 命名模型 ${config.llmModels.length ? config.llmModels.map((item) =>
     `${item.id}（${item.model} @ ${item.endpoint}）`).join('、') : '（未配置，分析类命令不可用）'}`)
-  log.info(`任务分工 | 话题=${config.llmModelTopic} 金句=${config.llmModelGoldenQuotes} ` +
-    `高光=${config.llmModelHighlightDialogues} 问答=${config.llmModelQuery} 画像=${config.llmModelUserPersona}` +
+  log.info(`任务分工 | 群分析=${config.llmModelTopic}（话题与金句同一次返回） 高光=${config.llmModelHighlightDialogues} ` +
+    `问答=${config.llmModelQuery} 画像=${config.llmModelUserPersona}` +
     `，${config.llmStream ? '流式' : '非流式'}，重试 ${config.llmRetries} 次`)
   log.info(`模型并发 | ${config.llmModels.length ? config.llmModels.map((item) =>
     `${item.id}=${item.concurrency}`).join('、') : '（未配置）'}`)

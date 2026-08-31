@@ -18,6 +18,15 @@ export interface SummaryTopic {
 }
 
 /**
+ * 「话题 + 金句」在同一次模型请求里的返回结构。
+ * 群分析只发一次请求，一次同时产出热门话题与金句。
+ */
+export interface GroupSummary {
+  topics: SummaryTopic[]
+  quotes: GoldenQuote[]
+}
+
+/**
  * 一条「金句」：单句成立的精彩发言，随群分析报告一起产出。
  *
  * 模型直接返回发送者昵称与发言原文，不返回 msgid。

@@ -147,8 +147,8 @@ export const Config: Schema<Config> = Schema.intersect([
       .required()
       .role('table')
       .description('命名模型列表，模型配置的唯一来源。想用不同模型（甚至不同厂商）生成不同类型的结果时，在这里定义若干模型，再在下方各任务的"模型"配置里分别指定'),
-    llmModelTopic: Schema.string().default('default').description('「话题总结」使用的模型 id，留空或填错时回落到列表第一个'),
-    llmModelGoldenQuotes: Schema.string().default('default').description('「金句提取」使用的模型 id，留空或填错时回落到列表第一个'),
+    llmModelTopic: Schema.string().default('default').description('「群分析」使用的模型 id——话题总结与金句提取在同一次请求里返回，共用这一个模型。留空或填错时回落到列表第一个'),
+    llmModelGoldenQuotes: Schema.string().default('default').description('已弃用：金句已并入「话题总结」在同一次请求里返回，此项不再生效，仅保留给旧配置'),
     llmModelHighlightDialogues: Schema.string().default('default').description('「高光对话」使用的模型 id，留空或填错时回落到列表第一个'),
     llmModelQuery: Schema.string().default('default').description('「群聊问答」使用的模型 id，留空或填错时回落到列表第一个'),
     llmModelUserPersona: Schema.string().default('default').description('「用户画像」使用的模型 id，留空或填错时回落到列表第一个'),
@@ -161,7 +161,7 @@ export const Config: Schema<Config> = Schema.intersect([
     cacheMinutes: Schema.number().default(5).min(0).description('分析结果缓存分钟数，0 表示不缓存'),
     maxUsersInReport: Schema.number().default(10).min(1).description('报告中展示的活跃用户数'),
     maxTopics: Schema.number().default(5).min(1).description('最多生成的话题数'),
-    maxGoldenQuotes: Schema.number().default(3).min(0).description('「高光对话」中最多收录的金句条数，0 表示不收金句'),
+    maxGoldenQuotes: Schema.number().default(3).min(0).description('群分析报告中最多收录的金句条数，0 表示不收金句'),
     maxHighlightDialogues: Schema.number().default(3).min(0).description('「高光对话」中最多截取的高光对话段数，0 表示不收对话'),
     maxHighlightLines: Schema.number().default(6).min(2).max(20).description('单段高光对话最多保留的轮次，超出的部分会被截断'),
   }).description('分析设置'),
@@ -179,7 +179,7 @@ export const Config: Schema<Config> = Schema.intersect([
     analysisUserFilter: Schema.array(Schema.string()).default([])
       .description('「群分析」忽略这些用户的发言，他们不进话题、不进活跃榜、也不计入统计'),
     quoteUserFilter: Schema.array(Schema.string()).default([])
-      .description('「金句」不收录这些用户的发言'),
+      .description('「金句」不收录这些用户。由于金句随话题在同一次模型请求里返回、共用同一份投喂消息，被屏蔽者的发言无法在投喂前剔除，改在结果层按昵称拦截：模型返回的金句若把话安到被屏蔽者头上（昵称张冠李戴或转述），会被直接丢弃'),
     dialogueUserFilter: Schema.array(Schema.string()).default([])
       .description('「高光对话」不收录这些用户，含有他们的对话整段丢弃'),
     personaUserFilter: Schema.array(Schema.string()).default([])
@@ -197,10 +197,10 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     promptTopic: Schema.string().role('textarea')
-      .description('话题总结提示词。占位符：{messages} {maxTopics} {groupName} {timeRange} {query}')
+      .description('群分析提示词（话题总结 + 金句提取在同一次请求里返回）。占位符：{messages} {maxTopics} {maxGoldenQuotes} {groupName} {timeRange} {query}；返回结构是包含 topics 与 quotes 两个数组的对象')
       .default(prompts.TOPIC),
     promptGoldenQuotes: Schema.string().role('textarea')
-      .description('金句提取提示词。占位符：{messages} {maxGoldenQuotes} {groupName} {timeRange}')
+      .description('已弃用：金句已并入「话题总结」提示词（promptTopic），此项不再生效，仅保留给旧配置')
       .default(prompts.GOLDEN_QUOTES),
     promptHighlightDialogues: Schema.string().role('textarea')
       .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂的 {messages} 是 JSON 数组，有头像的消息带 avatar 字段，模型据此在返回的 lines 里填 avatar')
