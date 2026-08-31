@@ -53,37 +53,6 @@ export const TOPIC =
 没有值得收录的金句就返回 \`"quotes": []\`。
 `
 
-/**
- * @deprecated 群分析的金句已并入 TOPIC 提示词，随话题在同一次请求里返回；
- * 此项仅保留给历史配置，新逻辑不再读取。
- */
-export const GOLDEN_QUOTES =
-  `请从群聊记录中挑出最多 {maxGoldenQuotes} 条最有意思的「金句」。
-
-标准：观点新颖、表达生动或有反差感的原创单句发言；跳过热词堆砌和复读。
-需要上下文才能看懂的片段不要选（那归「高光对话」）。
-
-群聊：{groupName}
-时间范围：{timeRange}
-
-群聊记录（JSON 数组，每条含 time / sender / content）：
-{messages}
-
-请严格按以下 JSON 格式返回，放在 json 代码块中：
-
-\`\`\`json
-[
-  {
-    "sender": "发送者昵称",
-    "content": "发言原文，照抄",
-    "reason": "入选理由"
-  }
-]
-\`\`\`
-
-没有值得收录的就返回 \`[]\`。
-`
-
 export const HIGHLIGHT_DIALOGUES =
   `请从群聊记录中截取最多 {maxHighlightDialogues} 段「高光对话」。
 

@@ -1,7 +1,7 @@
 import { Context, Service } from 'koishi'
 import type { Config, LLMModelConfig } from '../config'
 import { logger } from '../logger'
-import type { AnalysisContext, GoldenQuote, GroupSummary, HighlightDialogue, QueryAnswer, UserPersonaProfile } from '../types'
+import type { AnalysisContext, GroupSummary, HighlightDialogue, QueryAnswer, UserPersonaProfile } from '../types'
 import {
   describeError, extractJson, fill, findLeftovers, formatUsage, isRetryable, repairJson,
 } from './prompt'
@@ -9,7 +9,6 @@ import {
 /** 插件提供的所有 LLM 任务 */
 export type LLMTaskId =
   | 'topic'
-  | 'goldenQuotes'
   | 'highlightDialogues'
   | 'query'
   | 'userPersona'
@@ -17,7 +16,6 @@ export type LLMTaskId =
 /** 任务 → 指定模型用的配置字段名 */
 const TASK_MODEL_FIELD: Record<LLMTaskId, keyof Config> = {
   topic: 'llmModelTopic',
-  goldenQuotes: 'llmModelGoldenQuotes',
   highlightDialogues: 'llmModelHighlightDialogues',
   query: 'llmModelQuery',
   userPersona: 'llmModelUserPersona',
@@ -26,7 +24,6 @@ const TASK_MODEL_FIELD: Record<LLMTaskId, keyof Config> = {
 /** 任务 → 日志里用的名字 */
 const TASK_NAMES: Record<LLMTaskId, string> = {
   topic: '群分析',
-  goldenQuotes: '金句提取',
   highlightDialogues: '高光对话',
   query: '群聊问答',
   userPersona: '用户画像',
@@ -361,15 +358,6 @@ export class LLMService extends Service {
       topics: Array.isArray(result?.topics) ? result.topics : [],
       quotes: Array.isArray(result?.quotes) ? result.quotes : [],
     }
-  }
-
-  /** 挑选单句成立的金句，模型直接返回昵称与原文，原文不再按 id 回查 */
-  async analyzeGoldenQuotes(messages: string, context: AnalysisContext): Promise<GoldenQuote[]> {
-    return this.chatJson<GoldenQuote>('goldenQuotes', fill(this.config.promptGoldenQuotes, {
-      ...context,
-      messages,
-      maxGoldenQuotes: String(this.config.maxGoldenQuotes),
-    }))
   }
 
   /**

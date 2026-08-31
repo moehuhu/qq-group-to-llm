@@ -394,7 +394,6 @@ puppeteer 是**可选**依赖。没装、没启用、或者渲染过程中出了
 |---|---|---|
 | `llmModels` | — | 命名模型列表（必填，至少一个），见「LLM 接入」。每个模型的 `concurrency` 是该模型独立的并发上限 |
 | `llmModelTopic` | 列表第一个 | 「群分析」用的模型 id——话题与金句在同一次请求里返回 |
-| `llmModelGoldenQuotes` | 列表第一个 | 已弃用：金句并入「话题总结」同一次返回，此项不再生效 |
 | `llmModelHighlightDialogues` | 列表第一个 | 「高光对话」用的模型 id |
 | `llmModelQuery` | 列表第一个 | 「群聊问答」用的模型 id |
 | `llmModelUserPersona` | 列表第一个 | 「用户画像」用的模型 id |

@@ -44,10 +44,8 @@ export interface Config {
   llmStream: boolean
   /** 请求失败后的重试次数 */
   llmRetries: number
-  /** 话题总结使用的模型 id */
+  /** 话题总结与金句提取（同一次请求返回）使用的模型 id */
   llmModelTopic: string
-  /** 金句提取使用的模型 id */
-  llmModelGoldenQuotes: string
   /** 高光对话使用的模型 id */
   llmModelHighlightDialogues: string
   /** 群聊问答使用的模型 id */
@@ -114,7 +112,6 @@ export interface Config {
   extraCss: string
 
   promptTopic: string
-  promptGoldenQuotes: string
   promptHighlightDialogues: string
   promptQuery: string
   promptUserPersona: string
@@ -148,7 +145,6 @@ export const Config: Schema<Config> = Schema.intersect([
       .role('table')
       .description('命名模型列表，模型配置的唯一来源。想用不同模型（甚至不同厂商）生成不同类型的结果时，在这里定义若干模型，再在下方各任务的"模型"配置里分别指定'),
     llmModelTopic: Schema.string().default('default').description('「群分析」使用的模型 id——话题总结与金句提取在同一次请求里返回，共用这一个模型。留空或填错时回落到列表第一个'),
-    llmModelGoldenQuotes: Schema.string().default('default').description('已弃用：金句已并入「话题总结」在同一次请求里返回，此项不再生效，仅保留给旧配置'),
     llmModelHighlightDialogues: Schema.string().default('default').description('「高光对话」使用的模型 id，留空或填错时回落到列表第一个'),
     llmModelQuery: Schema.string().default('default').description('「群聊问答」使用的模型 id，留空或填错时回落到列表第一个'),
     llmModelUserPersona: Schema.string().default('default').description('「用户画像」使用的模型 id，留空或填错时回落到列表第一个'),
@@ -199,9 +195,6 @@ export const Config: Schema<Config> = Schema.intersect([
     promptTopic: Schema.string().role('textarea')
       .description('群分析提示词（话题总结 + 金句提取在同一次请求里返回）。占位符：{messages} {maxTopics} {maxGoldenQuotes} {groupName} {timeRange} {query}；返回结构是包含 topics 与 quotes 两个数组的对象')
       .default(prompts.TOPIC),
-    promptGoldenQuotes: Schema.string().role('textarea')
-      .description('已弃用：金句已并入「话题总结」提示词（promptTopic），此项不再生效，仅保留给旧配置')
-      .default(prompts.GOLDEN_QUOTES),
     promptHighlightDialogues: Schema.string().role('textarea')
       .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂的 {messages} 是 JSON 数组，有头像的消息带 avatar 字段，模型据此在返回的 lines 里填 avatar')
       .default(prompts.HIGHLIGHT_DIALOGUES),
