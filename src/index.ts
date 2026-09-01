@@ -12,6 +12,7 @@ import { applyCommands } from './commands'
 import { createTimeFormatter } from './time'
 
 export { Config } from './config'
+export * from './avatar'
 export * from './database'
 export * from './types'
 export * from './analysis'

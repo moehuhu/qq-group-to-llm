@@ -3,6 +3,7 @@
  *
  * 这里只管「怎么排」：正文一个字都不动——清洗归 text.ts，措辞归提示词模板。
  */
+import type { AvatarBook } from './avatar'
 import type { MessageRecord } from './database'
 import type { TimeFormatter } from './time'
 
@@ -22,8 +23,11 @@ export function layoutRecord(head: string, content: string | undefined | null): 
 }
 
 export interface PromptMessageOptions {
-  /** 是否在每条里带上 avatar 字段（高光对话出图需要模型把地址照抄回去） */
-  withAvatar?: boolean
+  /**
+   * 头像映射表。给了就在每条里带上发言人编号 uid（高光对话出图需要模型把发言人照抄回来），
+   * 头像地址本身留在表里不进提示词——地址长、还容易被抄错。
+   */
+  avatars?: AvatarBook
   /** 是否在每条里带上 scope 归属字段（用户画像需要区分群/频道） */
   withScope?: boolean
   /** 时间戳用年月日时分秒（用户画像），否则用时分秒（群分析等） */
@@ -36,7 +40,7 @@ export interface PromptMessageOptions {
  * - time：发言时间戳
  * - sender：发送者昵称（没有昵称时回落为用户 ID）
  * - content：发言原文，多行原样保留（JSON 字符串天然区分边界，不再靠缩进）
- * - avatar：发言时的头像地址，仅在 withAvatar 且记录里有地址时输出
+ * - uid：发言人在头像映射表里的短编号，仅在给了 avatars 且该发言人有头像时输出
  * - scope：归属标记 `群:xxx` / `频道:xxx`，仅在 withScope 时输出
  */
 export function toPromptJson(
@@ -50,7 +54,8 @@ export function toPromptJson(
       sender: message.username || message.userId || '',
       content: message.content,
     }
-    if (options.withAvatar && message.avatar) item.avatar = message.avatar
+    const uid = options.avatars?.uidOf(message)
+    if (uid) item.uid = uid
     if (options.withScope) {
       item.scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
     }

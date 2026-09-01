@@ -67,18 +67,18 @@ export const HIGHLIGHT_DIALOGUES =
 群聊：{groupName}
 时间范围：{timeRange}
 
-群聊记录（JSON 数组，每条含 time / sender / content，有头像的含 avatar）：
+群聊记录（JSON 数组，每条含 time / sender / content，有头像的含 uid 发言人编号）：
 {messages}
 
-请严格按以下 JSON 格式返回，放在 json 代码块中；avatar 从对应消息的 avatar 字段原样抄写，没有则留空字符串：
+请严格按以下 JSON 格式返回，放在 json 代码块中；uid 从对应消息的 uid 字段原样抄写，该消息没有 uid 就留空字符串：
 
 \`\`\`json
 [
   {
     "title": "一句话概括这段对话在聊什么",
     "lines": [
-      { "sender": "昵称", "avatar": "头像地址", "content": "发言原文" },
-      { "sender": "昵称", "avatar": "头像地址", "content": "第二条发言原文" }
+      { "sender": "昵称", "uid": "发言人编号", "content": "发言原文" },
+      { "sender": "昵称", "uid": "发言人编号", "content": "第二条发言原文" }
     ],
     "reason": "笑点在哪"
   }

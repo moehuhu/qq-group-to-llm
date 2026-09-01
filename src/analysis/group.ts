@@ -5,6 +5,7 @@ import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
 import { toPromptJson } from '../transcript'
+import { buildAvatarBook, type AvatarBook } from '../avatar'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
@@ -12,6 +13,7 @@ import type {
   GoldenQuote,
   HighlightDialogue,
   HighlightLine,
+  HighlightLineDraft,
   GroupAnalysisResult,
   MessageQuote,
   QueryAnswerResult,
@@ -58,12 +60,17 @@ export function excludeUsers(messages: MessageRecord[], blocked: string[]): Mess
 
 /**
  * 把消息渲染成投喂给 LLM 的 JSON 数组字符串，一条记录一个对象。
- * 字段含 time / sender / content；withAvatar 时额外带 avatar 字段，
- * 供模型把地址原样照抄进返回结果（高光对话出图用）。头像可能为空，
- * 那种情况不带该字段，模型在 avatar 字段留空即可。
+ * 字段含 time / sender / content；给了头像映射表时额外带一个短编号 uid，
+ * 供模型把发言人原样照抄进返回结果（高光对话出图用）。
+ * 头像地址留在表里不进提示词——省上下文，也省得模型抄错长地址。
+ * 没有头像的人不进表，也就不带 uid，模型把该字段留空即可。
  */
-export function formatForPrompt(messages: MessageRecord[], time: TimeFormatter, withAvatar = false): string {
-  return toPromptJson(messages, time, { withAvatar })
+export function formatForPrompt(
+  messages: MessageRecord[],
+  time: TimeFormatter,
+  avatars?: AvatarBook,
+): string {
+  return toPromptJson(messages, time, { avatars })
 }
 
 /** 把模型返回的条目压成一句可读的摘要，日志里用它指出具体丢的是哪一条 */
@@ -91,15 +98,23 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
  * 模型直接返回每轮的发送者昵称、头像与发言原文，不做回查校验。
  */
 export function normalizeDialogue(
-  item: Partial<HighlightDialogue<HighlightLine>> | undefined,
+  item: Partial<HighlightDialogue<HighlightLineDraft>> | undefined,
   maxLines: number,
+  avatars?: AvatarBook,
 ): HighlightDialogue<HighlightLine> | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
-    .map((line) => ({
-      sender: String(line?.sender ?? '').trim(),
-      content: String(line?.content ?? '').trim(),
-      avatar: String(line?.avatar ?? '').trim() || undefined,
-    }))
+    .map((line) => {
+      const sender = String(line?.sender ?? '').trim()
+      return {
+        sender,
+        content: String(line?.content ?? '').trim(),
+        // 模型抄回来的是编号，这里按表还原成地址；编号抄丢了就拿昵称在表里找一次。
+        // 没有表（旧调用）时只认模型直接抄回来的地址
+        avatar: avatars
+          ? avatars.resolve(line?.uid ?? line?.avatar, sender)
+          : String(line?.avatar ?? '').trim() || undefined,
+      }
+    })
     .filter((line) => line.sender && line.content)
     .slice(0, maxLines)
 
@@ -264,14 +279,17 @@ export async function analyzeDialogues(
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
-  // 模型直接返回每轮的昵称、头像与原文，投喂时 JSON 里带 avatar 字段供模型照抄
-  const messagesText = formatForPrompt(usable, time, true)
+  // 出图要头像，但地址不进提示词：先建一张「用户 ID ↔ 头像地址」的表，
+  // 投喂时每条只带表里的短编号 uid，模型照抄编号，落地时再还原成地址
+  const avatars = buildAvatarBook(usable)
+  const messagesText = formatForPrompt(usable, time, avatars)
 
-  log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)
+  log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}` +
+    (avatars.size ? `，头像映射表 ${avatars.size} 人（头像地址不进提示词，省下约 ${avatars.inlineChars} 字）` : ''))
 
   const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context, ticket)
 
-  const normalized = raw.map((item) => normalizeDialogue(item, config.maxHighlightLines))
+  const normalized = raw.map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
   const dialogues = normalized
     .filter((item): item is HighlightDialogue<HighlightLine> => !!item)
     .slice(0, config.maxHighlightDialogues)
@@ -280,7 +298,7 @@ export async function analyzeDialogues(
   const droppedDetails: string[] = []
   let dialogueRank = 0 // 第几段有效对话（归一化后按原始顺序计），用于判断是否超出上限
   for (const [index, item] of raw.entries()) {
-    const dialogue = normalizeDialogue(item, config.maxHighlightLines)
+    const dialogue = normalizeDialogue(item, config.maxHighlightLines, avatars)
     if (!dialogue) {
       const title = summarizeDropped(item?.title)
       const lineCount = Array.isArray(item?.lines)

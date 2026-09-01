@@ -42,7 +42,7 @@ export interface GoldenQuote {
 }
 
 /**
- * 高光对话里的一轮发言。
+ * 高光对话里的一轮发言，已还原成渲染直接可用的形态。
  *
  * 模型直接返回每轮的发送者昵称与发言原文，不返回 msgid，
  * 抽取阶段与渲染阶段共用同一结构，不再按 id 从数据库回查。
@@ -52,7 +52,23 @@ export interface HighlightLine {
   sender: string
   /** 发言原文（模型从群聊记录里照抄，不做回查校验） */
   content: string
-  /** 发言人头像地址，取不到时渲染退回首字色块 */
+  /** 发言人头像地址，由头像映射表按 uid 还原；取不到时渲染退回首字色块 */
+  avatar?: string
+}
+
+/**
+ * 模型返回的一轮发言（尚未还原头像）。
+ *
+ * 头像地址不进提示词，投喂时每条只带一个短编号 uid，模型照抄回来，
+ * 由 avatar.ts 的映射表还原成地址；avatar 只为兼容改过提示词、
+ * 仍让模型直接抄地址的旧配置而保留。
+ */
+export interface HighlightLineDraft {
+  sender?: string
+  content?: string
+  /** 发言人在头像映射表里的短编号 */
+  uid?: string
+  /** 模型直接抄回来的头像地址（旧提示词的形态） */
   avatar?: string
 }
 
