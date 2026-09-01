@@ -2,6 +2,7 @@ import { Context } from 'koishi'
 import { load } from 'js-yaml'
 import type { Config } from '../config'
 import { logger } from '../logger'
+import type { QueueTicket } from '../llm'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
@@ -123,6 +124,7 @@ export async function resolvePersona(
   config: Config,
   target: PersonaTarget,
   force = false,
+  ticket?: QueueTicket,
 ): Promise<PersonaOutcome> {
   const log = logger(ctx)
   const id = buildId(target.platform, target.userId)
@@ -166,7 +168,7 @@ export async function resolvePersona(
     userId: target.userId,
     username,
     messages: formatForPrompt(messages, resolveTimeFormatter(ctx, config.timezone)),
-  })
+  }, ticket)
 
   if (!generated) {
     log.warn(`${id} 的画像生成失败，${previous ? '保留已存画像' : '无已存画像可用'}`)

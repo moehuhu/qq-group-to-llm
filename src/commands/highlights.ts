@@ -70,21 +70,36 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
         }
       }
 
-      const messages = await fetchMessages(ctx, config, target, days)
-      if (messages.length < config.minMessages) {
-        log.info(`高光对话中止: ${messages.length} 条记录不足 minMessages=${config.minMessages}`)
-        return `最近 ${days} 天只有 ${messages.length} 条记录，不足 ${config.minMessages} 条，无法分析。`
+      // 同一用户同一指令去重，登记并发名额
+      const ticket = ctx.qqGroupLlm.register('highlightDialogues', {
+        userId: session.userId ?? 'unknown',
+        command: '高光对话',
+      })
+      if (!ticket) {
+        log.info(`高光对话去重: ${session.userId} 已有在飞或排队的请求`)
+        return '你已有「高光对话」请求在处理或排队中，请稍后再试。'
       }
 
-      await session.send(`正在从最近 ${days} 天的 ${messages.length} 条消息里找高光对话，请稍候…`)
-
       try {
+        // 排队时立刻播报，用户无需等取数完成
+        if (ticket.position > 0) {
+          await session.send(`「高光对话」请求已入队，前方还有 ${ticket.position} 个请求，请耐心等待…`)
+        }
+
+        const messages = await fetchMessages(ctx, config, target, days)
+        if (messages.length < config.minMessages) {
+          log.info(`高光对话中止: ${messages.length} 条记录不足 minMessages=${config.minMessages}`)
+          return `最近 ${days} 天只有 ${messages.length} 条记录，不足 ${config.minMessages} 条，无法分析。`
+        }
+
+        await session.send(`正在从最近 ${days} 天的 ${messages.length} 条消息里找高光对话，请稍候…`)
+
         // 命令参数只在本次生效，不覆盖配置里的默认值
         const limit = count
           ? Math.min(Math.max(count, 1), config.maxHighlightDialogues)
           : config.maxHighlightDialogues
         const digest = await analyzeDialogues(
-          ctx, { ...config, maxHighlightDialogues: limit }, messages, target,
+          ctx, { ...config, maxHighlightDialogues: limit }, messages, target, ticket,
         )
 
         if (!digest.dialogues.length) {
@@ -98,6 +113,8 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
       } catch (error) {
         log.error('高光对话抽取失败:', error)
         return `高光对话抽取失败：${error instanceof Error ? error.message : String(error)}`
+      } finally {
+        ticket.release()
       }
     })
 

@@ -56,7 +56,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
         `模式=${question ? `问答「${question}」` : '报告'}${options.force ? '，强制刷新' : ''}`)
 
       const cacheKey = `${channelId}:${days}`
-        if (!question && !options.force && config.cacheMinutes > 0) {
+      if (!question && !options.force && config.cacheMinutes > 0) {
         const cached = cache.get(cacheKey)
         if (cached && cached.expireAt > Date.now()) {
           log.info(`命中群分析缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
@@ -64,20 +64,36 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
         }
       }
 
-      const messages = await fetchMessages(ctx, config, target, days)
-      if (messages.length < config.minMessages) {
-        log.info(`群分析中止: ${messages.length} 条记录不足 minMessages=${config.minMessages}`)
-        return `最近 ${days} 天只有 ${messages.length} 条记录，不足 ${config.minMessages} 条，无法分析。`
+      // 先登记并发名额并入队（同一用户同一指令去重，跨任务生效）。
+      // 排队位次在提示语里直接告诉用户；取数期间占着位，防止同一个人反复堆请求
+      const ticket = ctx.qqGroupLlm.register(question ? 'query' : 'topic', {
+        userId: session.userId ?? 'unknown',
+        command: '群分析',
+      })
+      if (!ticket) {
+        log.info(`群分析去重: ${session.userId} 已有在飞或排队的请求`)
+        return '你已有「群分析」请求在处理或排队中，请稍后再试。'
       }
 
-      await session.send(`正在分析最近 ${days} 天的 ${messages.length} 条消息，请稍候…`)
-
       try {
+        // 排队时立刻播报：用户无需等取数完成才知道自己排在第几个
+        if (ticket.position > 0) {
+          await session.send(`「群分析」请求已入队，前方还有 ${ticket.position} 个请求，请耐心等待…`)
+        }
+
+        const messages = await fetchMessages(ctx, config, target, days)
+        if (messages.length < config.minMessages) {
+          log.info(`群分析中止: ${messages.length} 条记录不足 minMessages=${config.minMessages}`)
+          return `最近 ${days} 天只有 ${messages.length} 条记录，不足 ${config.minMessages} 条，无法分析。`
+        }
+
+        await session.send(`正在分析最近 ${days} 天的 ${messages.length} 条消息，请稍候…`)
+
         if (question) {
-          const result = await answerQuery(ctx, config, messages, target, question)
+          const result = await answerQuery(ctx, config, messages, target, question, ticket)
           return renderQueryAnswer(result)
         }
-        const result = await analyzeGroup(ctx, config, messages, target)
+        const result = await analyzeGroup(ctx, config, messages, target, '', ticket)
         if (config.cacheMinutes > 0) {
           cache.set(cacheKey, { result, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
           log.debug(`群分析结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
@@ -86,6 +102,8 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
       } catch (error) {
         log.error('群分析执行失败:', error)
         return `群分析失败：${error instanceof Error ? error.message : String(error)}`
+      } finally {
+        ticket.release()
       }
     })
 

@@ -16,6 +16,7 @@ import type {
   MessageQuote,
   QueryAnswerResult,
 } from '../types'
+import type { QueueTicket } from '../llm'
 export interface AnalysisTarget {
   channelId: string
   guildId?: string
@@ -134,6 +135,7 @@ export async function analyzeGroup(
   messages: MessageRecord[],
   target: AnalysisTarget,
   query = '',
+  ticket?: QueueTicket,
 ): Promise<GroupAnalysisResult> {
   const log = logger(ctx)
   const startedAt = Date.now()
@@ -168,7 +170,7 @@ export async function analyzeGroup(
   // 高光对话不在这里抽取，它由独立的「高光对话」命令负责。
   // 金句由模型直接返回昵称与原文，投喂普通对话格式即可，无需 <msgid:…> 锚点
   const summary = await settle(
-    () => ctx.qqGroupLlm.analyzeGroupSummary(messagesText, context),
+    () => ctx.qqGroupLlm.analyzeGroupSummary(messagesText, context, ticket),
     '话题与金句',
     { topics: [], quotes: [] },
   )
@@ -250,6 +252,7 @@ export async function analyzeDialogues(
   config: Config,
   messages: MessageRecord[],
   target: AnalysisTarget,
+  ticket?: QueueTicket,
 ): Promise<DialogueDigest> {
   const log = logger(ctx)
   const startedAt = Date.now()
@@ -266,7 +269,7 @@ export async function analyzeDialogues(
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}`)
 
-  const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context)
+  const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context, ticket)
 
   const normalized = raw.map((item) => normalizeDialogue(item, config.maxHighlightLines))
   const dialogues = normalized
@@ -312,6 +315,7 @@ export async function answerQuery(
   messages: MessageRecord[],
   target: AnalysisTarget,
   query: string,
+  ticket?: QueueTicket,
 ): Promise<QueryAnswerResult> {
   const log = logger(ctx)
   // 问答是「群分析」命令的一部分，沿用同一份屏蔽名单
@@ -321,7 +325,7 @@ export async function answerQuery(
   log.info(`群聊问答: ${context.groupName} 基于 ${usable.length} 条消息，问题「${query}」` +
     (messages.length !== usable.length ? `（屏蔽了 ${messages.length - usable.length} 条）` : ''))
 
-  const outcome = await ctx.qqGroupLlm.answerQuery(formatForPrompt(usable, time), context)
+  const outcome = await ctx.qqGroupLlm.answerQuery(formatForPrompt(usable, time), context, ticket)
   const cited: MessageQuote[] = outcome.cited ?? []
 
   return {

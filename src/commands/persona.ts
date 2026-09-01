@@ -46,9 +46,24 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
         return '该用户已被设置为不参与画像分析。'
       }
 
-      await session.send('正在生成用户画像，请稍候…')
+      // 同一用户同一指令去重，登记并发名额
+      const ticket = ctx.qqGroupLlm.register('userPersona', {
+        userId: session.userId,
+        command: '用户画像',
+      })
+      if (!ticket) {
+        log.info(`用户画像去重: ${session.userId} 已有在飞或排队的请求`)
+        return '你已有「用户画像」请求在处理或排队中，请稍后再试。'
+      }
 
       try {
+        // 排队时立刻播报，用户无需等取数完成
+        if (ticket.position > 0) {
+          await session.send(`「用户画像」请求已入队，前方还有 ${ticket.position} 个请求，请耐心等待…`)
+        }
+
+        await session.send('正在生成用户画像，请稍候…')
+
         const avatar = await resolveAvatar(session, userId)
         log.info(`${userId} 的头像${avatar ? `已取到: ${avatar}` : '未取到，结果中不展示'}`)
 
@@ -58,7 +73,7 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
           username: userId === session.userId ? (session.username || userId) : userId,
           avatar,
           channelId: session.channelId,
-        }, options.force ?? false)
+        }, options.force ?? false, ticket)
 
         const persona = outcome.persona
         if (!persona) {
@@ -95,6 +110,8 @@ export function applyPersonaCommand(ctx: Context, config: Config) {
       } catch (error) {
         log.error('用户画像生成失败:', error)
         return `用户画像生成失败：${error instanceof Error ? error.message : String(error)}`
+      } finally {
+        ticket.release()
       }
     })
 }

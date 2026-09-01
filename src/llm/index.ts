@@ -29,15 +29,45 @@ const TASK_NAMES: Record<LLMTaskId, string> = {
   userPersona: '用户画像',
 }
 
+/** 排队/在飞请求的归属元信息：日志里点名，入队去重也靠它 */
+export interface QueueMeta {
+  /** 发起请求的用户 ID */
+  userId: string
+  /** 指令名，如「群分析」「高光对话」「用户画像」；同一用户同一指令不重复入队 */
+  command: string
+}
+
+/** 登记取得的占位凭证 */
+export interface QueueTicket {
+  /** 排在该请求之前的请求数（在飞 + 排队中更靠前），0 表示立即获得并发名额 */
+  position: number
+  /**
+   * 获得并发名额的时刻；position 为 0 时立即就绪。
+   * LLM 调用会先等待它再发请求，命令层也可用它决定何时向用户播报就绪。
+   */
+  ready: Promise<void>
+  /** 请求结束（成功或失败）后必须调用，归还占位；不调用会让并发名额泄漏 */
+  release(): void
+}
+
+/** 队列中的一个占位：在飞（wake 为空）或排队等待名额（wake 为唤醒回调） */
+interface QueueEntry {
+  meta: QueueMeta
+  /** 排队时的唤醒回调；在飞时为空 */
+  wake?: () => void
+}
+
 export class LLMService extends Service {
   static inject = ['http']
 
   private readonly log: ReturnType<typeof logger>
 
-  /** 各模型当前在飞的请求数 */
-  private readonly active = new Map<string, number>()
-  /** 各模型等待名额的请求，先到先得 */
-  private readonly waiting = new Map<string, Array<() => void>>()
+  /** 各模型在飞的请求（带归属元信息，供日志与去重），一个占位对应一个真实请求 */
+  private readonly inflightRequests = new Map<string, QueueEntry[]>()
+  /** 各模型等待名额的请求（带归属元信息，供日志与去重），先到先得 */
+  private readonly waitingRequests = new Map<string, QueueEntry[]>()
+  /** 处于在飞或排队中的指令占位，key = userId:command，用于跨任务去重 */
+  private readonly activeCommands = new Map<string, QueueEntry>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'qqGroupLlm', true)
@@ -69,58 +99,153 @@ export class LLMService extends Service {
   }
 
   /**
-   * 取一个并发名额，名额满了就排队等。
+   * 把一个占位放进闸门：有空位立即激活（返回 0），否则排队（前方请求数）。
    * 每个模型各有一道独立闸门，配额互不相干：
    * 一个模型在排队不会占掉另一个模型的在飞数，各自只受各自的上限约束。
    */
-  private async acquire(model: LLMModelConfig, name: string): Promise<void> {
+  private schedule(model: LLMModelConfig, entry: QueueEntry): number {
     const limit = this.limitOf(model)
-    const active = this.active.get(model.id) ?? 0
-    if (active < limit) {
-      this.active.set(model.id, active + 1)
-      return
+    const inflight = this.inflightRequests.get(model.id) ?? []
+    if (inflight.length < limit) {
+      inflight.push(entry)
+      this.inflightRequests.set(model.id, inflight)
+      return 0
     }
-    this.log.info(`[${name}] 模型「${model.id}」已有 ${active} 个请求在飞（上限 ${limit}），排队等待`)
-    let queue = this.waiting.get(model.id)
-    if (!queue) {
-      queue = []
-      this.waiting.set(model.id, queue)
-    }
-    await new Promise<void>((resolve) => queue.push(resolve))
-    // 名额由 release 直接转交，这里不再自增，否则会超发
+    const waiting = this.waitingRequests.get(model.id) ?? []
+    waiting.push(entry)
+    this.waitingRequests.set(model.id, waiting)
+    return inflight.length + waiting.length - 1
   }
 
-  /** 交还名额：有人在等就直接把名额转给他，避免中间出现空档被别人抢走 */
-  private release(model: LLMModelConfig): void {
-    const queue = this.waiting.get(model.id)
-    const next = queue?.shift()
-    if (next) next()
+  /**
+   * 让出一个占位：把请求从在飞列表移除；若它还在排队则直接摘掉。
+   * 释放后把等待队列里能发的请求推进在飞，每空出一个名额推进一个。
+   */
+  private release(model: LLMModelConfig, entry: QueueEntry): void {
+    const inflight = this.inflightRequests.get(model.id)
+    if (inflight) {
+      const idx = inflight.indexOf(entry)
+      if (idx >= 0) {
+        inflight.splice(idx, 1)
+        if (!inflight.length) this.inflightRequests.delete(model.id)
+      }
+    } else {
+      const waiting = this.waitingRequests.get(model.id)
+      if (waiting) {
+        const j = waiting.indexOf(entry)
+        if (j >= 0) {
+          waiting.splice(j, 1)
+          this.log.info(`[${entry.meta.command}] ${entry.meta.userId} 的请求已取消，` +
+            `移出等待队列（还剩 ${waiting.length} 个在等）`)
+        }
+      }
+    }
+    this.activeCommands.delete(this.keyOf(entry.meta))
+    this.pump(model)
+  }
+
+  /** 跨任务去重用的键：同一用户对同一指令只保留一个占位 */
+  private keyOf(meta: QueueMeta): string {
+    return `${meta.userId}:${meta.command}`
+  }
+
+  /** 把等待队列里够格的请求推进在飞；名额只增不减，每次调用最多补到上限 */
+  private pump(model: LLMModelConfig): void {
+    const waiting = this.waitingRequests.get(model.id)
+    if (!waiting?.length) return
+    const inflight = this.inflightRequests.get(model.id) ?? []
+    const limit = this.limitOf(model)
+    while (inflight.length < limit && waiting.length) {
+      const next = waiting.shift()!
+      inflight.push(next)
+      next.wake?.()
+      this.log.info(`[${next.meta.command}] ${next.meta.userId} 获得模型「${model.id}」的名额出队，` +
+        `等待队列还剩 ${waiting.length} 个（${this.formatQueue(model)}）`)
+    }
+    if (inflight.length) this.inflightRequests.set(model.id, inflight)
+    if (!waiting.length) this.waitingRequests.delete(model.id)
+  }
+
+  /** 当前等待队列摘要，日志里点名谁在排队 */
+  private formatQueue(model: LLMModelConfig): string {
+    const waiting = this.waitingRequests.get(model.id)
+    if (!waiting?.length) return '（空）'
+    return waiting.map((entry) => `${entry.meta.command}/${entry.meta.userId}`).join('，')
+  }
+
+  /**
+   * 请求发起前登记一次占位（供命令层在真正调用前向用户提示排队/去重）。
+   *
+   * - 同模型的并发名额有空位时立即激活（position 0），否则进入该模型的等待队列。
+   * - position 为前方请求数（在飞 + 排队中更靠前）。
+   * - 同一用户对同一指令（无论任务落到哪个模型）已有在飞或排队的请求时不重复入队，返回 null。
+   *
+   * 取得凭证后必须在请求结束（成功或失败）时调用 release()，
+   * 否则并发名额会泄漏、排队者永远等不到。
+   */
+  register(taskId: LLMTaskId, meta: QueueMeta): QueueTicket | null {
+    const model = this.resolveModel(taskId)
+    const task = TASK_NAMES[taskId]
+    const key = this.keyOf(meta)
+    if (this.activeCommands.has(key)) {
+      this.log.info(`[${task}] ${meta.command}/${meta.userId} 已有在飞或排队的请求，拒绝重复入队`)
+      return null
+    }
+
+    let wake!: () => void
+    const ready = new Promise<void>((resolve) => { wake = resolve })
+    const entry: QueueEntry = { meta, wake: () => wake() }
+    const position = this.schedule(model, entry)
+    this.activeCommands.set(key, entry)
+    if (position === 0) wake()
     else {
-      const active = (this.active.get(model.id) ?? 1) - 1
-      if (active > 0) this.active.set(model.id, active)
-      else this.active.delete(model.id)
+      this.log.info(`[${task}] 模型「${model.id}」已满（上限 ${this.limitOf(model)}），` +
+        `${meta.command}/${meta.userId} 入队，前方 ${position} 个。当前排队：${this.formatQueue(model)}`)
+    }
+    return {
+      position,
+      ready,
+      release: () => this.release(model, entry),
     }
   }
 
   /**
-   * 并发闸门。接口扛不住太多并发请求，同时打过去会失败，
+   * 并发闸门（未登记占位的调用路径）。接口扛不住太多并发请求，同时打过去会失败，
    * 因此各模型在飞数量始终不超过该模型配置里的 concurrency。
    * release 放在 finally 里：请求失败也必须还名额，否则会把后面的全饿死。
    */
   private async enqueue<T>(model: LLMModelConfig, task: () => Promise<T>, name: string): Promise<T> {
-    await this.acquire(model, name)
+    let wake!: () => void
+    const promise = new Promise<void>((resolve) => { wake = resolve })
+    const entry: QueueEntry = {
+      meta: { userId: '外部调用', command: name },
+      wake: () => wake(),
+    }
+    const position = this.schedule(model, entry)
+    if (position > 0) {
+      this.log.info(`[${name}] 模型「${model.id}」已满（上限 ${this.limitOf(model)}），排队等待，` +
+        `前方 ${position} 个。当前排队：${this.formatQueue(model)}`)
+      await promise
+    }
     try {
       return await task()
     } finally {
-      this.release(model)
+      this.release(model, entry)
     }
   }
 
   /** 调用 OpenAI 兼容接口，返回原始文本。经并发闸门限流，失败按需重试 */
-  private chat(taskId: LLMTaskId, prompt: string): Promise<string> {
+  private async chat(taskId: LLMTaskId, prompt: string, ticket?: QueueTicket): Promise<string> {
     const task = TASK_NAMES[taskId]
     const model = this.resolveModel(taskId)
-    return this.enqueue(model, () => this.requestWithRetry(model, prompt, task), task)
+    const run = () => this.requestWithRetry(model, prompt, task)
+    // 调用方已通过 register 登记占位：先等名额就绪（排到首位即放行）再发起请求，
+    // 占位由调用方在请求结束后 release
+    if (ticket) {
+      await ticket.ready
+      return run()
+    }
+    return this.enqueue(model, run, task)
   }
 
   /**
@@ -302,9 +427,9 @@ export class LLMService extends Service {
   }
 
   /** 调用并解析 markdown 代码块中的 JSON */
-  private async chatJson<T>(taskId: LLMTaskId, prompt: string): Promise<T[]> {
+  private async chatJson<T>(taskId: LLMTaskId, prompt: string, ticket?: QueueTicket): Promise<T[]> {
     const task = TASK_NAMES[taskId]
-    const raw = await this.chat(taskId, prompt)
+    const raw = await this.chat(taskId, prompt, ticket)
     const json = extractJson(raw)
     if (json === null) {
       this.log.warn(`[${task}] 未返回 JSON 代码块，完整响应:\n${raw}`)
@@ -346,13 +471,17 @@ export class LLMService extends Service {
    * 话题与金句在同一次请求里返回。投喂的消息只有一份（无法再按任务分开屏蔽），
    * 返回的金句与话题都基于同一份记录。模型没返回 quotes 字段时按空数组处理。
    */
-  async analyzeGroupSummary(messages: string, context: AnalysisContext): Promise<GroupSummary> {
+  async analyzeGroupSummary(
+    messages: string,
+    context: AnalysisContext,
+    ticket?: QueueTicket,
+  ): Promise<GroupSummary> {
     const results = await this.chatJson<GroupSummary>('topic', fill(this.config.promptTopic, {
       ...context,
       messages,
       maxTopics: String(this.config.maxTopics),
       maxGoldenQuotes: String(this.config.maxGoldenQuotes),
-    }))
+    }), ticket)
     const result = results[0]
     return {
       topics: Array.isArray(result?.topics) ? result.topics : [],
@@ -368,30 +497,34 @@ export class LLMService extends Service {
   async analyzeHighlightDialogues(
     messages: string,
     context: AnalysisContext,
+    ticket?: QueueTicket,
   ): Promise<HighlightDialogue[]> {
     return this.chatJson<HighlightDialogue>('highlightDialogues', fill(this.config.promptHighlightDialogues, {
       ...context,
       messages,
       maxHighlightDialogues: String(this.config.maxHighlightDialogues),
       maxHighlightLines: String(this.config.maxHighlightLines),
-    }))
+    }), ticket)
   }
 
   /**
    * 生成用户画像。每次都只依据传入的聊天记录重新生成，不参考已有结论。
    * 返回 null 表示模型没有给出可用结果。
    */
-  async analyzeUserPersona(input: {
-    userId: string
-    username: string
-    messages: string
-  }): Promise<UserPersonaProfile | null> {
+  async analyzeUserPersona(
+    input: {
+      userId: string
+      username: string
+      messages: string
+    },
+    ticket?: QueueTicket,
+  ): Promise<UserPersonaProfile | null> {
     const profiles = await this.chatJson<UserPersonaProfile>('userPersona', fill(this.config.promptUserPersona, {
       messages: input.messages,
       userId: input.userId,
       username: input.username,
       lookbackDays: String(this.config.personaLookbackDays),
-    }))
+    }), ticket)
 
     const profile = profiles[0]
     if (!profile?.summary) {
@@ -402,8 +535,12 @@ export class LLMService extends Service {
   }
 
   /** 自然语言问答。返回回答与所引用的消息（发送者 + 原文），供调用方直接展示 */
-  async answerQuery(messages: string, context: AnalysisContext): Promise<QueryAnswer> {
-    const results = await this.chatJson<QueryAnswer>('query', fill(this.config.promptQuery, { ...context, messages }))
+  async answerQuery(
+    messages: string,
+    context: AnalysisContext,
+    ticket?: QueueTicket,
+  ): Promise<QueryAnswer> {
+    const results = await this.chatJson<QueryAnswer>('query', fill(this.config.promptQuery, { ...context, messages }), ticket)
     const result = results[0]
     if (!result?.answer?.trim()) {
       this.log.warn('[群聊问答] 结果缺少 answer 字段，视为无效')
