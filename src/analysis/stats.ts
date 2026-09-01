@@ -7,6 +7,13 @@ import type { UserStats } from '../types'
 const MEDIA_PATTERN = /\[(图片|face|image|img|sticker|mface)\]/
 /** 引用预览带发言人时是 `[引用 张三]`，关掉 recordQuotes 时只有 `[引用]`，两种都算 */
 const QUOTE_PATTERN = /\[引用(?: [^\]]*)?\]/
+/** 媒体占位符里带地址的形态：`[图片](https://…)`，计数时保留 `[图片]`，括号里的 URL 不计入字数 */
+const MEDIA_URL_INLINE = /\[(图片|视频)\]\(([^)]+)\)/g
+
+/** 去掉媒体占位符里 URL 后的字符数（正文里的裸 URL 原样计数） */
+function textLength(text: string): number {
+  return text.replace(MEDIA_URL_INLINE, '[$1]').length
+}
 
 /** 累加中的计数，不对外暴露 */
 interface Accumulator {
@@ -56,8 +63,8 @@ export function calculateStats(messages: MessageRecord[], time: TimeFormatter, a
     activeHours[hour] = (activeHours[hour] || 0) + 1
 
     acc.messageCount++
-    acc.charCount += message.content.length
-    totalChars += message.content.length
+    acc.charCount += textLength(message.content)
+    totalChars += textLength(message.content)
     if (hour < 6) acc.nightCount++
     if (MEDIA_PATTERN.test(message.content)) acc.mediaCount++
     if (QUOTE_PATTERN.test(message.content)) acc.quoteCount++
