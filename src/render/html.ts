@@ -109,6 +109,27 @@ function quoteBar(name: string, text: string): string {
  */
 const FORWARD_PATTERN = /(?:^|\n)\[([^\]\n]*聊天记录)\]\n([\s\S]+)$/
 
+/**
+ * 卡片占位块：recorder 把 QQ 卡片消息（Ark / 分享链接）压成
+ *
+ *     [卡片] 小程序
+ *       标题: …
+ *       封面: [图片](https://…)
+ *       链接: [链接](https://…)
+ *
+ * 开头 `[卡片] 类型`，后面紧跟若干缩进的字段行。
+ */
+const CARD_PATTERN = /(?:^|\n)\[卡片\][ \t]*([^\n]*)\n((?:[ \t][^\n]*\n?)*)$/
+
+/** 卡片字段行：`  标题: 值` */
+const CARD_FIELD = /^[ \t]*([^:：]+)[:：][ \t]*(.*)$/
+
+/** 卡片封面占位：`[图片](url)`，与消息媒体占位同一形态 */
+const CARD_COVER = /^\[(?:图片|视频)\]\((\S+)\)$/
+
+/** 卡片链接占位：`[链接](url)` */
+const CARD_LINK = /^\[链接\]\((\S+)\)$/
+
 /** 卡片里最多列几条。转发几十条的截图会长得没法看，剩下的折成一行计数 */
 const FORWARD_MAX_ROWS = 8
 
@@ -167,6 +188,55 @@ function forwardCard(title: string, block: string): string {
 }
 
 /**
+ * 一张卡片消息（Ark / 分享链接）。
+ *
+ * 卡片的内容全部来自 recorder 压好的字段：标题、来源、描述、封面图、链接。
+ * 没有封面图时整张卡片只排文字（卡片本来就短，不需要图形撑场面）；
+ * 有封面图时排成两栏，左图右文。链接渲染成可点的标签。
+ */
+function renderCard(kind: string, block: string): string {
+  const fields: Record<string, string> = {}
+  for (const line of block.split('\n')) {
+    const match = CARD_FIELD.exec(line)
+    if (match) fields[match[1].trim()] = match[2].trim()
+  }
+
+  const title = fields['标题']
+  const source = fields['来源']
+  const desc = fields['描述']
+  const coverUrl = CARD_COVER.exec(fields['封面'] ?? '')?.[1]
+  const linkUrl = CARD_LINK.exec(fields['链接'] ?? '')?.[1]
+  const safeCover = safeImageUrl(coverUrl)
+  const safeLink = safeImageUrl(linkUrl)
+
+  const head = `<div class="card-head">` +
+    `<span class="card-kind">${escapeHtml(kind || '卡片')}</span>` +
+    (title ? `<span class="card-title">${escapeHtml(title)}</span>` : '') +
+    (source ? `<span class="card-source">${escapeHtml(source)}</span>` : '') +
+    `</div>`
+  const body = desc
+    ? `<div class="card-desc">${escapeHtml(desc)}</div>`
+    : ''
+
+  let link = ''
+  if (safeLink) {
+    link = `<a class="card-link" href="${escapeHtml(safeLink)}" rel="noreferrer noopener">` +
+      `跳转链接 ↗</a>`
+  }
+
+  const cover = safeCover
+    ? `<div class="card-cover"><img src="${escapeHtml(safeCover)}" alt="" onerror="this.remove()">` +
+    `<span class="card-cover-fallback">${escapeHtml(title || kind)}</span></div>`
+    : ''
+
+  return `<div class="msg-card">` +
+    (cover
+      ? `<div class="card-row">${cover}<div class="card-main">${head}${body}${link}</div></div>`
+      : `${head}${body}${link}`) +
+    `</div>`
+}
+
+/**
  * 渲染一条消息正文：文字转义，图片占位符换成真正的图片，
  * 引用与合并转发各自成块。
  * 不做这一步的话，群里发的图在报告里就是一行扎眼的 `[图片](https://...)` 原文。
@@ -183,8 +253,10 @@ export function renderMessageContent(text: string): string {
 /** 引用条之后的正文：带转发卡片就把卡片单独画出来，其余按普通正文排 */
 function renderBody(source: string): string {
   const forward = source.match(FORWARD_PATTERN)
-  if (!forward) return renderInline(source)
-  return renderInline(source.slice(0, forward.index)) + forwardCard(forward[1], forward[2])
+  if (forward) return renderInline(source.slice(0, forward.index)) + forwardCard(forward[1], forward[2])
+  const card = source.match(CARD_PATTERN)
+  if (card) return renderInline(source.slice(0, card.index)) + renderCard(card[1], card[2])
+  return renderInline(source)
 }
 
 /**

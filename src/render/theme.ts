@@ -279,6 +279,96 @@ const MESSAGE = `
 .msg-fwd .msg-media { margin: 2px 0; }
 .msg-fwd .msg-img { max-width: 180px; max-height: 84px; }
 
+/* 消息里的卡片（Ark / 分享链接） */
+/* 卡片自带两栏布局，不吃气泡的 pre-wrap——那会在行与行之间多顶出一个空行 */
+.msg-card {
+  margin: 5px 0;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  white-space: normal;
+}
+.msg-card:first-child { margin-top: 0; }
+.msg-card:last-child { margin-bottom: 0; }
+/* 有封面图时左图右文两栏 */
+.card-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.card-cover {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line);
+}
+.card-cover img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+/* 封面图没加载出来时露出的兜底文字，盖在底色上 */
+.card-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+}
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.card-kind {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+}
+.card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.card-source {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+.card-desc {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.card-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
 /* 消息里的图片 */
 /* 图片自成一行；line-height:0 去掉 inline-block 底部那道基线缝隙 */
 .msg-media {

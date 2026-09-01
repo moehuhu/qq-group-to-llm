@@ -9,10 +9,12 @@ const MEDIA_PATTERN = /\[(图片|face|image|img|sticker|mface)\]/
 const QUOTE_PATTERN = /\[引用(?: [^\]]*)?\]/
 /** 媒体占位符里带地址的形态：`[图片](https://…)`，计数时保留 `[图片]`，括号里的 URL 不计入字数 */
 const MEDIA_URL_INLINE = /\[(图片|视频)\]\(([^)]+)\)/g
+/** 卡片占位块的链接占位符：`[链接](https://…)`，与媒体占位同理，剥掉 URL 保留标记 */
+const CARD_LINK_INLINE = /\[链接\]\(([^)]+)\)/g
 
-/** 去掉媒体占位符里 URL 后的字符数（正文里的裸 URL 原样计数） */
+/** 去掉媒体占位符与卡片链接里的 URL 后的字符数（正文里的裸 URL 原样计数） */
 function textLength(text: string): number {
-  return text.replace(MEDIA_URL_INLINE, '[$1]').length
+  return text.replace(MEDIA_URL_INLINE, '[$1]').replace(CARD_LINK_INLINE, '[链接]').length
 }
 
 /** 累加中的计数，不对外暴露 */

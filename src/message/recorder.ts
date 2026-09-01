@@ -3,7 +3,7 @@ import type { Config } from '../config'
 import { MessageRecord, TABLE } from '../database'
 import { rememberAvatar, type AvatarCache } from '../avatar'
 import { logger } from '../logger'
-import { AT_ALL_NAME, atToken, cleanContent, faceToken, mediaKind, mediaToken } from '../text'
+import { AT_ALL_NAME, atToken, cardBlock, cleanContent, faceToken, mediaKind, mediaToken } from '../text'
 
 /** 判断某条会话消息是否应该被记录 */
 function shouldRecord(session: Session, config: Config): boolean {
@@ -32,8 +32,15 @@ const src = (el: Element): string => String(el.attrs['src'] || el.attrs['url'] |
  * `{ t, d: { … } }`。别的平台对不上就是空对象，取什么都是 undefined——
  * 这几段只在适配器漏了东西时兜底，不是主路径。
  */
-function rawPayload(session: Session): { mentions?: unknown, attachments?: unknown } {
-  const event = session.event as { _data?: { d?: { mentions?: unknown, attachments?: unknown } } }
+function rawPayload(session: Session): {
+  mentions?: unknown,
+  attachments?: unknown,
+  ark_data?: unknown,
+  message_type?: unknown,
+} {
+  const event = session.event as {
+    _data?: { d?: { mentions?: unknown, attachments?: unknown, ark_data?: unknown, message_type?: unknown } }
+  }
   return event._data?.d ?? {}
 }
 
@@ -244,6 +251,74 @@ function droppedAttachments(session: Session, config: Config): string {
     .join('')
 }
 
+/** 原始载荷里的卡片数据（Ark / 分享链接），对不上形状就是 undefined */
+function rawCardData(session: Session): Record<string, unknown> | undefined {
+  const ark = rawPayload(session).ark_data
+  return ark && typeof ark === 'object' ? ark as Record<string, unknown> : undefined
+}
+
+/** 卡片字段的常见键名 → 渲染层的统一键。QQ 的 fields 键名不完全固定，别名都认一遍 */
+const CARD_FIELD_ALIASES: Record<string, string[]> = {
+  标题: ['title', 'name'],
+  来源: ['source', 'subtitle', 'tag'],
+  描述: ['desc', 'description', 'prompt', 'nickname', 'address'],
+  封面: ['preview', 'cover', 'img', 'avatar'],
+  链接: ['jump_url', 'url', 'link'],
+}
+
+function firstString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+/** 从载荷 ark_data 里读出一张卡片的字段，键为渲染层统一的五个键 */
+function extractCardFields(ark: Record<string, unknown>): Record<string, string> {
+  const fields = ark.fields
+  const source = fields && typeof fields === 'object' ? fields as Record<string, unknown> : ark
+  const out: Record<string, string> = {}
+  for (const [key, aliases] of Object.entries(CARD_FIELD_ALIASES)) {
+    for (const alias of aliases) {
+      const value = firstString(source[alias])
+      if (value) { out[key] = value; break }
+    }
+  }
+  return out
+}
+
+/** 卡片类型的中文名：优先 ark_name，退回 ark_type，都没有就按内容猜 */
+function cardKindName(ark: Record<string, unknown>, fields: Record<string, string>): string {
+  return firstString(ark.ark_name)
+    ?? firstString(ark.ark_type)
+    ?? (fields.来源 || '卡片')
+}
+
+/**
+ * 把 QQ 卡片消息压成自包含的占位块。适配器收到卡片时只留下
+ * `[卡片消息] 小程序\n摘要: …` 这样一行占位文本，结构化字段全丢了——
+ * 这里从原始载荷的 ark_data 里把字段捞回来，存成渲染层能还原的形态。
+ * 没有卡片数据时返回空串。
+ */
+function buildCardBlock(session: Session): string {
+  const ark = rawCardData(session)
+  if (!ark) return ''
+  const fields = extractCardFields(ark)
+  return cardBlock(cardKindName(ark, fields), fields)
+}
+
+/** QQ 卡片消息在正文里留下的残缺占位文本：`[卡片消息] 小程序\n摘要: …` */
+const CARD_PLACEHOLDER = /[ \t]*\[卡片消息\][^\n]*(?:\n[ \t]*摘要[:：][^\n]*)?/g
+
+/**
+ * 有结构化卡片块时，把正文里适配器留下的残缺占位文本清掉——
+ * 卡片内容已经由 ark_data 完整还原，占位文本再留着就是两份卡片信息。
+ */
+function stripCardPlaceholder(body: string): string {
+  if (!body) return body
+  return body
+    .replace(CARD_PLACEHOLDER, '')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
 function buildRecord(session: Session, config: Config, book: NameBook): MessageRecord {
   const suffix = session.messageId ||
     `${session.selfId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -257,7 +332,11 @@ function buildRecord(session: Session, config: Config, book: NameBook): MessageR
   // 适配器漏掉的附件接在正文后面。正文是多行（压好的转发卡片）时另起一行——
   // 直接贴上去会挂到卡片最后一条记录的屁股上，像是那个人发的
   const dropped = droppedAttachments(session, config)
-  const full = [body, dropped].filter(Boolean).join(body.includes('\n') ? '\n' : '')
+  // 适配器漏掉的卡片（Ark/分享链接）接在正文后面；卡片可能独占一条消息。
+  // 有卡片时先清掉正文里的残缺占位文本，避免两份卡片信息
+  const card = buildCardBlock(session)
+  const main = card ? stripCardPlaceholder(body) : body
+  const full = [main, dropped, card].filter(Boolean).join(main.includes('\n') ? '\n' : '')
   // 引用独占首行：正文可能好几行，混排在一起就分不清哪句是回的、哪句是说的
   const content = [quotePreview(session, serializer), full].filter(Boolean).join('\n')
   return {

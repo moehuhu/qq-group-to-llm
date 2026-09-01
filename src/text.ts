@@ -170,6 +170,44 @@ export function mediaToken(kind: string, url?: string, keepUrl = true): string {
   return keepUrl && url && MEDIA_WITH_URL.has(kind) ? `[${kind}](${url})` : `[${kind}]`
 }
 
+/** 卡片占位块里的字段标签，渲染时按这些键还原成卡片 */
+const CARD_FIELD_KEYS = ['标题', '来源', '描述', '封面', '链接']
+
+/** 封面与链接是纯 URL，包成占位形态——统计时连 URL 一起剔除，渲染时按同一套正则还原 */
+const CARD_URL_FIELDS = new Set(['封面', '链接'])
+
+/** 是否已包成占位形态（老记录可能存的是纯 URL，还原时再兜一道） */
+const CARD_WRAPPED = /^\[(?:图片|链接)\]\(.+\)$/
+
+/**
+ * 把一张 QQ 卡片消息（Ark / 分享链接）压成一个自包含的文本块。
+ *
+ * QQ 下发的卡片数据在载荷的 ark_data 里，适配器只把它排成 `[卡片消息] 类型\n摘要: …`
+ * 的占位文本——信息在落库前就丢了。这里把结构化字段排成「标题行 + 缩进键值行」，
+ * 渲染层据此还原成真正的卡片：
+ *
+ *     [卡片] 小程序
+ *       标题: 快来完成今日学习打卡
+ *       来源: 学习助手
+ *       描述: …
+ *       封面: [图片](https://…)
+ *       链接: [链接](https://…)
+ *
+ * 封面与链接套用媒体占位符的括号形态，统计时能连 URL 一起剔除。
+ */
+export function cardBlock(kind: string, fields: Record<string, string>): string {
+  const lines = [`[卡片] ${kind.trim() || '卡片'}`]
+  for (const key of CARD_FIELD_KEYS) {
+    const flat = String(fields[key] ?? '').replace(/\s+/g, ' ').trim()
+    if (!flat) continue
+    const value = CARD_URL_FIELDS.has(key) && !CARD_WRAPPED.test(flat)
+      ? (key === '封面' ? `[图片](${flat})` : `[链接](${flat})`)
+      : flat
+    lines.push(`  ${key}: ${value}`)
+  }
+  return lines.join('\n')
+}
+
 /**
  * MIME → 占位符类型。QQ 下发的附件带的是 `image/jpeg`、`video/mp4` 这样的 MIME，
  * 也见过 `file` / `voice` 这类光秃秃的词，两种都认。认不出的一律算文件。
