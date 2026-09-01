@@ -153,10 +153,10 @@ export interface GroupAnalysisResult {
   totalParticipants: number
   /** 发言最集中的整点时段，无数据时为 undefined */
   mostActivePeriod?: string
-/** 24 个整点各自的发言量，下标即小时（0-23），恒为 24 项 */
-hourly: number[]
+  /** 24 个整点各自的发言量，下标即小时（0-23），恒为 24 项 */
+  hourly: number[]
   /** 每个整点发言最多的用户（昵称 + 头像），下标即小时（0-23），与 hourly 一一对应；该小时无人发言时为 undefined */
-  hourlyTop?: HourlySpeaker[]
+  hourlyTop?: (HourlySpeaker | undefined)[]
   userStats: UserStats[]
   topics: SummaryTopic[]
   /** 金句，直接携带昵称与原文 */
