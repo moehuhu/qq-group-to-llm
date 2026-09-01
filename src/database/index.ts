@@ -1,5 +1,5 @@
 import { Context } from 'koishi'
-import { PERSONA_TABLE, TABLE } from './tables'
+import { AVATAR_TABLE, PERSONA_TABLE, TABLE } from './tables'
 
 export * from './tables'
 
@@ -17,6 +17,17 @@ export function extendModel(ctx: Context) {
     content: 'text',
     timestamp: 'timestamp',
     messageId: 'string',
+  }, {
+    primary: 'id',
+  })
+
+  ctx.database.extend(AVATAR_TABLE, {
+    id: 'string',
+    platform: 'string',
+    userId: 'string',
+    username: 'string',
+    avatar: 'text',
+    updatedAt: 'timestamp',
   }, {
     primary: 'id',
   })

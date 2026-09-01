@@ -4,6 +4,7 @@ import type { Config } from '../config'
 import { logger } from '../logger'
 import type { QueueTicket } from '../llm'
 import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
+import { findAvatar } from '../avatar'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
 import { toPromptJson } from '../transcript'
@@ -141,9 +142,18 @@ export async function resolvePersona(
   const previous = parsePersona(ctx, record)
   log.debug(`已存画像 ${previous ? `存在，上次分析于 ${record?.lastAnalysisAt}` : '不存在'}（仅用于缓存与兜底，不参与本次生成）`)
 
+  // 头像存在映射表里（一人一行，见 avatar.ts）：命令触发时平台没给（比如不支持 getUser）就靠它
+  const mapped = await findAvatar(ctx, target.platform, target.userId)
+  /**
+   * 头像按新鲜度取：命令触发时刚抓到的 → 映射表里的 → 老消息行自带的 → 画像里存的旧值。
+   * recorded 只在取过消息之后才有值（且只可能来自升级前落的记录，新记录不带地址）。
+   */
+  const pickAvatar = (recorded?: string) =>
+    target.avatar || mapped || recorded || record?.avatar || undefined
+
   if (!force && previous && isFresh(record, config.personaCacheDays)) {
     log.info(`命中画像缓存 ${id}（personaCacheDays=${config.personaCacheDays} 天内），跳过 LLM 调用`)
-    return { persona: previous, avatar: target.avatar || record?.avatar, cached: true, messageCount: 0 }
+    return { persona: previous, avatar: pickAvatar(), cached: true, messageCount: 0 }
   }
 
   const messages = await collectMessages(ctx, config, target)
@@ -153,7 +163,7 @@ export async function resolvePersona(
     // 本次无法生成，有旧画像时返回旧的总比什么都没有好
     return {
       persona: previous,
-      avatar: target.avatar || messages.find((message) => message.avatar)?.avatar || record?.avatar,
+      avatar: pickAvatar(messages.find((message) => message.avatar)?.avatar),
       cached: !!previous,
       messageCount: messages.length,
       reason: `最近 ${config.personaLookbackDays} 天只有 ${messages.length} 条发言，` +
@@ -162,7 +172,7 @@ export async function resolvePersona(
   }
 
   const username = messages[messages.length - 1].username || target.username
-  // 记录里存了发言当时的头像：命令触发时没抓到（比如平台不支持 getUser）就用这个兜底
+  // 升级前的老记录里还带着发言当时的头像，映射表没有这个人时拿它兜底
   const recordedAvatar = [...messages].reverse().find((message) => message.avatar)?.avatar
   const generated = await ctx.qqGroupLlm.analyzeUserPersona({
     userId: target.userId,
@@ -174,7 +184,7 @@ export async function resolvePersona(
     log.warn(`${id} 的画像生成失败，${previous ? '保留已存画像' : '无已存画像可用'}`)
     return {
       persona: previous,
-      avatar: target.avatar || recordedAvatar || record?.avatar,
+      avatar: pickAvatar(recordedAvatar),
       cached: !!previous,
       messageCount: messages.length,
       reason: 'LLM 未返回可用的画像结果',
@@ -198,8 +208,8 @@ export async function resolvePersona(
   log.debug(`${id} 本次画像: 特质 ${toArray(profile.keyTraits).length} 项 / ` +
     `兴趣 ${toArray(profile.interests).length} 项 / 证据 ${evidence.length}/${rawEvidence.length} 条`)
 
-  // 本次没抓到头像时依次回退到记录里的、库里的旧值，不要把已有的抹掉
-  const avatar = target.avatar || recordedAvatar || record?.avatar || ''
+  // 本次没抓到头像时依次回退到映射表、老记录、库里的旧值，不要把已有的抹掉
+  const avatar = pickAvatar(recordedAvatar) || ''
   const now = new Date()
   await ctx.database.upsert(PERSONA_TABLE, [{
     id,

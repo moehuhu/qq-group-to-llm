@@ -196,7 +196,7 @@ export const Config: Schema<Config> = Schema.intersect([
       .description('群分析提示词（话题总结 + 金句提取在同一次请求里返回）。占位符：{messages} {maxTopics} {maxGoldenQuotes} {groupName} {timeRange} {query}；返回结构是包含 topics 与 quotes 两个数组的对象')
       .default(prompts.TOPIC),
     promptHighlightDialogues: Schema.string().role('textarea')
-      .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂的 {messages} 是 JSON 数组，有头像的消息带一个短编号 `uid`（形如 `u1`），模型把它原样抄进返回的 lines 里，出图时插件再按内部的「头像地址 ↔ 用户 ID」映射表还原成真正的头像地址——头像地址不进提示词，省下的上下文相当可观。改这段提示词时记得保留「照抄 `uid`」这条要求；老提示词里的 `avatar` 字段仍能解析，模型漏抄时也会拿昵称回表里兜底找一次，但记录里已经不带头像地址了')
+      .description('高光对话提示词。占位符：{messages} {maxHighlightDialogues} {maxHighlightLines} {groupName} {timeRange}。投喂的 {messages} 是 JSON 数组，有头像的消息带一个短编号 `uid`（形如 `u1`），模型把它原样抄进返回的 lines 里，出图时插件再按 `qq_group_avatars` 这张「用户 ID → 头像地址」映射表还原成真正的头像地址——头像地址不进提示词，省下的上下文相当可观。改这段提示词时记得保留「照抄 `uid`」这条要求；老提示词里的 `avatar` 字段仍能解析，模型漏抄时也会拿昵称回表里兜底找一次，但记录里已经不带头像地址了')
       .default(prompts.HIGHLIGHT_DIALOGUES),
     promptQuery: Schema.string().role('textarea')
       .description('自然语言提问提示词，返回 JSON（answer 回答 + cited 引用的消息，含发送者昵称与原文）。占位符：{messages} {query} {groupName} {timeRange} {currentTime}')

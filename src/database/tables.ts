@@ -2,6 +2,7 @@
 
 export const TABLE = 'qq_group_messages'
 export const PERSONA_TABLE = 'qq_group_personas'
+export const AVATAR_TABLE = 'qq_group_avatars'
 
 export interface MessageRecord {
   id: string
@@ -11,7 +12,11 @@ export interface MessageRecord {
   guildId?: string
   userId?: string
   username: string
-  /** 发言时的头像地址，用于渲染图片；平台没给就是空串 */
+  /**
+   * 旧记录里的头像地址。头像已改为按人存进 qq_group_avatars（一人一行，
+   * 不再逐条重复一份长地址），新记录这里恒为空串；升级前落的老记录仍留着地址，
+   * 映射表里查不到人时拿它兜底。
+   */
   avatar: string
   content: string
   timestamp: Date
@@ -32,9 +37,29 @@ export interface PersonaRecord {
   updatedAt: Date
 }
 
+/**
+ * 一个人的头像：`平台:用户 ID` → 最近一次见到的头像地址。
+ *
+ * 单独一张表而不是逐条消息存一份：QQ 的头像地址动辄七八十个字符，
+ * 一个人说一万句就重复一万遍；投喂给模型时也只发映射表里的短编号（见 avatar.ts）。
+ * 消息按 retentionDays 清掉之后这里仍留着，出图时那张脸不会跟着消息一起消失。
+ */
+export interface AvatarRecord {
+  /** `平台:用户 ID` */
+  id: string
+  platform: string
+  userId: string
+  /** 最近一次见到的昵称，模型只抄回昵称时用它认人 */
+  username: string
+  avatar: string
+  /** 头像或昵称变动的时间，同一张脸重复出现不会刷新它 */
+  updatedAt: Date
+}
+
 declare module 'koishi' {
   interface Tables {
     qq_group_messages: MessageRecord
     qq_group_personas: PersonaRecord
+    qq_group_avatars: AvatarRecord
   }
 }

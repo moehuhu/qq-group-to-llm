@@ -22,6 +22,8 @@ export function applyRetentionCleanup(ctx: Context, config: Config) {
     const cutoff = new Date(Date.now() - retentionMs)
     const startedAt = Date.now()
     try {
+      // 只删消息。头像映射表（qq_group_avatars）不跟着清：人还在群里脸就还该在，
+      // 一行不过百余字节，而它一旦删了，老消息清空之后那张脸就再也找不回来了
       const result = await ctx.database.remove(TABLE, { timestamp: { $lt: cutoff } })
       const removed = (result as { removed?: number })?.removed
       log.info(`清理完成，删除 ${removed ?? '未知数量'} 条 ${createTimeFormatter(config.timezone).dateTime(cutoff)} 之前的消息，耗时 ${Date.now() - startedAt}ms`)

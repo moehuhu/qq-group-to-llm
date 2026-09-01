@@ -1,6 +1,7 @@
 import { Context, Element, Session, Universal } from 'koishi'
 import type { Config } from '../config'
 import { MessageRecord, TABLE } from '../database'
+import { rememberAvatar, type AvatarCache } from '../avatar'
 import { logger } from '../logger'
 import { AT_ALL_NAME, atToken, cleanContent, faceToken, mediaKind, mediaToken } from '../text'
 
@@ -267,8 +268,9 @@ function buildRecord(session: Session, config: Config, book: NameBook): MessageR
     guildId: session.guildId,
     userId: session.userId,
     username: session.username || '',
-    // 头像地址随发言一起留存：事后渲染时平台接口未必还查得到这个人
-    avatar: session.author?.avatar || '',
+    // 头像不再逐条留存：同一个人的地址在这里重复成千上万遍，
+    // 改为按人存进 qq_group_avatars（见 avatar.ts），这一列只留着读老记录
+    avatar: '',
     content,
     timestamp: new Date(session.timestamp),
     messageId: session.messageId || '',
@@ -288,6 +290,8 @@ export function applyMessageListener(ctx: Context, config: Config) {
   let recorded = 0
   // 认人用的名册跟着插件走：卸载即丢，不留跨实例的残留
   const book: NameBook = new Map()
+  // 已经落过库的脸，用来省掉每条消息一次 upsert；头像本身存在库里，丢了缓存只是多写一次
+  const faces: AvatarCache = new Map()
 
   ctx.on('message', async (session) => {
     if (!shouldRecord(session, config)) {
@@ -312,6 +316,13 @@ export function applyMessageListener(ctx: Context, config: Config) {
     } catch (error) {
       log.warn(`记录消息失败 (id=${record.id}):`, error)
     }
+    // 头像单独记：新面孔、换了头像或改了昵称才写一次，写失败不影响上面这条消息
+    await rememberAvatar(ctx, faces, {
+      platform: session.platform,
+      userId: session.userId,
+      username: session.username,
+      avatar: session.author?.avatar,
+    })
   })
 
   ctx.on('dispose', () => log.info(`消息监听已停止，本次运行共记录 ${recorded} 条`))

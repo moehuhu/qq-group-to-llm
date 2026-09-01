@@ -5,7 +5,7 @@ import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
 import { toPromptJson } from '../transcript'
-import { buildAvatarBook, type AvatarBook } from '../avatar'
+import { loadAvatarBook, type AvatarBook } from '../avatar'
 import { MessageRecord, TABLE } from '../database'
 import type {
   AnalysisContext,
@@ -166,8 +166,10 @@ export async function analyzeGroup(
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(analysisMessages, target, time, query)
+  // 话题与金句都只认昵称，投喂时不带头像编号；活跃榜要出头像，映射表只给统计用
   const messagesText = formatForPrompt(analysisMessages, time)
-  const { userStats, totalChars, mostActivePeriod, hourly } = calculateStats(analysisMessages, time)
+  const avatars = await loadAvatarBook(ctx, analysisMessages)
+  const { userStats, totalChars, mostActivePeriod, hourly } = calculateStats(analysisMessages, time, avatars)
 
   log.info(`开始群分析: ${context.groupName}，${analysisMessages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
@@ -279,9 +281,9 @@ export async function analyzeDialogues(
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
-  // 出图要头像，但地址不进提示词：先建一张「用户 ID ↔ 头像地址」的表，
+  // 出图要头像，但地址不进提示词：先从库里取出这批人的「用户 ID ↔ 头像地址」映射表，
   // 投喂时每条只带表里的短编号 uid，模型照抄编号，落地时再还原成地址
-  const avatars = buildAvatarBook(usable)
+  const avatars = await loadAvatarBook(ctx, usable)
   const messagesText = formatForPrompt(usable, time, avatars)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}` +

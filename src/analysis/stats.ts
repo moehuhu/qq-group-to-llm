@@ -1,3 +1,4 @@
+import type { AvatarBook } from '../avatar'
 import type { MessageRecord } from '../database'
 import type { TimeFormatter } from '../time'
 import type { UserStats } from '../types'
@@ -22,8 +23,11 @@ interface Accumulator {
 /**
  * 基于已序列化的消息文本统计发言数据。
  * 整点由传入的格式化器决定，好让分桶和报告里展示的时间落在同一个时区。
+ *
+ * 活跃榜要出头像，而头像已改为按人存进映射表（见 avatar.ts）——给了 avatars 就从表里取，
+ * 表里没有的人退回消息行自带的地址（升级前落的老记录才有）。
  */
-export function calculateStats(messages: MessageRecord[], time: TimeFormatter) {
+export function calculateStats(messages: MessageRecord[], time: TimeFormatter, avatars?: AvatarBook) {
   const accumulators: Record<string, Accumulator> = {}
   const activeHours: Record<number, number> = {}
   let totalChars = 0
@@ -45,7 +49,8 @@ export function calculateStats(messages: MessageRecord[], time: TimeFormatter) {
     const acc = accumulators[userId]
     // messages 按时间正序，后写的覆盖先写的，最终留下最近一次的昵称与头像
     if (message.username) acc.username = message.username
-    if (message.avatar) acc.avatar = message.avatar
+    const avatar = avatars?.avatarOf(message) || message.avatar
+    if (avatar) acc.avatar = avatar
 
     const hour = time.hour(message.timestamp)
     activeHours[hour] = (activeHours[hour] || 0) + 1
