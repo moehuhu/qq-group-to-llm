@@ -33,7 +33,6 @@ export const TOPIC =
       "topic": "话题名称",
       "contributors": ["昵称1", "昵称2"],
       "detail": "话题描述，可多行",
-      "messages": ["昵称：支撑该话题的原话", "昵称：第二条原话"]
     }
   ],
   "quotes": [
@@ -105,6 +104,7 @@ export const USER_PERSONA =
   `你是社群观察员。基于该用户最近 {lookbackDays} 天的聊天记录，给出中性、克制的用户画像。
 
 只写记录能支撑的结论，不推测身份、职业、住址等隐私，不做褒贬评价。
+evidence 只填若干条最有代表性的原话，纯文本。
 
 聊天记录（JSON 数组，每条含 time / scope / sender / content）：
 {messages}
@@ -118,7 +118,8 @@ export const USER_PERSONA =
   "summary": "整体印象",
   "keyTraits": ["性格特质"],
   "interests": ["关注的主题或爱好"],
-  "communicationStyle": "表达风格与情绪倾向"
+  "communicationStyle": "表达风格与情绪倾向",
+  "evidence": ["第一条原话", "第二条原话"]
 }
 \`\`\`
 `
