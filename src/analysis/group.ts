@@ -169,7 +169,7 @@ export async function analyzeGroup(
   // 话题与金句都只认昵称，投喂时不带头像编号；活跃榜要出头像，映射表只给统计用
   const messagesText = formatForPrompt(analysisMessages, time)
   const avatars = await loadAvatarBook(ctx, analysisMessages)
-  const { userStats, totalChars, mostActivePeriod, hourly } = calculateStats(analysisMessages, time, avatars)
+  const { userStats, totalChars, mostActivePeriod, hourly, hourlyTop } = calculateStats(analysisMessages, time, avatars)
 
   log.info(`开始群分析: ${context.groupName}，${analysisMessages.length} 条消息 / ${userStats.length} 人 / ${messagesText.length} 字，范围 ${context.timeRange}`)
 
@@ -254,6 +254,7 @@ export async function analyzeGroup(
     totalParticipants: userStats.length,
     mostActivePeriod,
     hourly,
+    hourlyTop,
     userStats: userStats.slice(0, config.maxUsersInReport),
     topics: usableTopics.slice(0, config.maxTopics),
     quotes: usableQuotes,

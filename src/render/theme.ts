@@ -499,6 +499,25 @@ const REPORT_PARTS = `
   font-variant-numeric: tabular-nums;
   margin-bottom: 3px;
 }
+/* 柱顶的「本时段发言最多」头像。columns 两列布局下柱宽不到 30px，
+   尺寸收得很小，只求一眼认出是谁，不必比活跃榜更讲究 */
+.chart-top {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+  height: 18px;
+}
+.chart-avatar {
+  position: relative;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,.85);
+}
 .chart-bar {
   width: 100%;
   border-radius: 4px 4px 2px 2px;

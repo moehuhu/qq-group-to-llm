@@ -8,7 +8,7 @@
  * ——markdown 那条出口不受影响，emoji 由聊天客户端自己渲染，那边照旧用。
  * 用户内容里的 emoji 是数据，原样透传，这条只约束模板自己写死的字符。
  */
-import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, HighlightLine, UserPersonaProfile } from '../types'
+import type { DialogueDigest, GroupAnalysisResult, HighlightDialogue, HighlightLine, HourlySpeaker, UserPersonaProfile } from '../types'
 import {
   DIALOGUES_THEME, PERSONA_THEME, REPORT_THEME,
   resolveDocument, type RenderStyleConfig,
@@ -335,8 +335,12 @@ function renderDialogue(dialogue: HighlightDialogue<HighlightLine>): string {
 /** 柱形区的像素高度。用绝对值而非百分比：列高会被上下的标签撑开，百分比算不准 */
 const CHART_HEIGHT = 110
 
-/** 24 小时发言量柱状图 */
-function renderHourly(hourly: number[], totalMessages: number): string {
+/** 24 小时发言量柱状图。每个整点柱顶显示该时段发言最多用户的头像 */
+function renderHourly(
+  hourly: number[],
+  totalMessages: number,
+  hourlyTop?: (HourlySpeaker | undefined)[],
+): string {
   const peak = Math.max(...hourly)
   // 全零时不画图，一排贴地的柱子没有信息量
   if (!peak) return `<div class="empty">暂无足够数据</div>`
@@ -348,7 +352,12 @@ function renderHourly(hourly: number[], totalMessages: number): string {
     const classes = ['chart-col']
     if (hour === peakHour) classes.push('peak')
     if (hour < 6) classes.push('night')
+    const top = count && hourlyTop?.[hour]
     return `<div class="${classes.join(' ')}">` +
+      (top
+        ? `<div class="chart-top" title="${escapeHtml(top.username)}">` +
+          avatarTag(top.username, top.avatar, 'chart-avatar') + `</div>`
+        : '') +
       `<div class="chart-value">${count || ''}</div>` +
       `<div class="chart-bar" style="height:${height}px"></div>` +
       `<div class="chart-hour">${hour}</div>` +
@@ -433,7 +442,7 @@ export function renderReportHtml(result: GroupAnalysisResult, config: RenderStyl
     topics: section('热门话题', topics),
     quotes: quotesHtml,
     ranks: ranksHtml,
-    hourly: section('活跃时段', renderHourly(result.hourly ?? [], result.totalMessages)),
+    hourly: section('活跃时段', renderHourly(result.hourly ?? [], result.totalMessages, result.hourlyTop)),
   })
 }
 

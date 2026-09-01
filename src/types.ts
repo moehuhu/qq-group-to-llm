@@ -137,6 +137,14 @@ export interface UserStats {
   replyRatio: number
 }
 
+/** 某个整点时段发言最多的用户，柱状图上用来给柱子标出「这个钟头谁最吵」 */
+export interface HourlySpeaker {
+  /** 昵称，无头像时退回首字色块上的那个字 */
+  username: string
+  /** 头像地址，取不到时渲染层退回首字色块 */
+  avatar?: string
+}
+
 export interface GroupAnalysisResult {
   groupName: string
   timeRange: string
@@ -145,8 +153,10 @@ export interface GroupAnalysisResult {
   totalParticipants: number
   /** 发言最集中的整点时段，无数据时为 undefined */
   mostActivePeriod?: string
-  /** 24 个整点各自的发言量，下标即小时（0-23），恒为 24 项 */
-  hourly: number[]
+/** 24 个整点各自的发言量，下标即小时（0-23），恒为 24 项 */
+hourly: number[]
+  /** 每个整点发言最多的用户（昵称 + 头像），下标即小时（0-23），与 hourly 一一对应；该小时无人发言时为 undefined */
+  hourlyTop?: HourlySpeaker[]
   userStats: UserStats[]
   topics: SummaryTopic[]
   /** 金句，直接携带昵称与原文 */

@@ -1,7 +1,7 @@
 import type { AvatarBook } from '../avatar'
 import type { MessageRecord } from '../database'
 import type { TimeFormatter } from '../time'
-import type { UserStats } from '../types'
+import type { HourlySpeaker, UserStats } from '../types'
 
 /** 序列化内容中代表表情/图片、引用的占位符 */
 const MEDIA_PATTERN = /\[(图片|face|image|img|sticker|mface)\]/
@@ -37,6 +37,8 @@ interface Accumulator {
 export function calculateStats(messages: MessageRecord[], time: TimeFormatter, avatars?: AvatarBook) {
   const accumulators: Record<string, Accumulator> = {}
   const activeHours: Record<number, number> = {}
+  /** 每个整点里各用户的发言数，键为小时 */
+  const hourUsers: Record<number, Record<string, number>> = {}
   let totalChars = 0
 
   for (const message of messages) {
@@ -61,6 +63,10 @@ export function calculateStats(messages: MessageRecord[], time: TimeFormatter, a
 
     const hour = time.hour(message.timestamp)
     activeHours[hour] = (activeHours[hour] || 0) + 1
+
+    // 每个整点各用户的发言数，柱状图上挑出发言冠军
+    const hourBucket = hourUsers[hour] ??= {}
+    hourBucket[userId] = (hourBucket[userId] || 0) + 1
 
     acc.messageCount++
     acc.charCount += textLength(message.content)
@@ -91,5 +97,18 @@ export function calculateStats(messages: MessageRecord[], time: TimeFormatter, a
   // 定长 24 项，没人说话的整点也要占位，否则柱状图会缺格
   const hourly = Array.from({ length: 24 }, (_, hour) => activeHours[hour] ?? 0)
 
-  return { userStats, totalChars, mostActivePeriod, hourly }
+  // 每个整点发言最多的人，柱状图上给柱子标出「这个钟头谁最吵」。
+  // 发帖数并列时取先见到的那个（messages 按时间正序）
+  const hourlyTop: (HourlySpeaker | undefined)[] = hourly.map((count, hour) => {
+    if (!count) return undefined
+    const bucket = hourUsers[hour]
+    const topId = Object.keys(bucket).reduce(
+      (best, id) => (bucket[id] > bucket[best] ? id : best),
+      Object.keys(bucket)[0],
+    )
+    const acc = accumulators[topId]
+    return { username: acc.username, avatar: acc.avatar || undefined }
+  })
+
+  return { userStats, totalChars, mostActivePeriod, hourly, hourlyTop }
 }
