@@ -26,6 +26,22 @@ function redactImageUrl(value: string): string {
   }
 }
 
+function formatHtmlForLog(html: string): string {
+  let indent = 0
+  return html
+    .replace(/>\s*</g, '>\n<')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (/^<\//.test(line)) indent = Math.max(0, indent - 1)
+      const formatted = `${'  '.repeat(indent)}${line}`
+      if (/^<[^!/][^>]*[^/]\s*>$/.test(line) && !/<\//.test(line)) indent += 1
+      return formatted
+    })
+    .join('\n')
+}
+
 /**
  * 把 HTML 截成图片，返回可直接发送的图片元素字符串。
  * 失败返回 null——调用方据此回退到文本。
@@ -41,6 +57,7 @@ export async function renderHtmlToImage(
   const log = logger(ctx)
   const startedAt = Date.now()
   try {
+    log.info(`[${task}] 即将渲染 HTML:\n${formatHtmlForLog(html)}`)
     const image = await ctx.puppeteer.render(html, async (page, next) => {
       // deviceScaleFactor=2 出二倍图，QQ 里缩放后文字才不糊
       await page.setViewport({
