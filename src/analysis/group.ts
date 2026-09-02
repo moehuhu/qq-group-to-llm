@@ -161,18 +161,19 @@ export function normalizeDialogue(
 function resolveMediaTokens(content: string, medias?: MediaBook): string {
   if (!content) return content
   if (!medias) return resolveMediaUrls(content)
-  return content.replace(MEDIA_BOOK_TOKEN, (match) => medias.resolve(match) ?? match)
+  return content.replace(MEDIA_BOOK_TOKEN, (match, kind: string, token: string) =>
+    medias.resolve(`[${kind}:m${token}]`) ?? match)
 }
 
 /** 模型抄回的短编号占位形态：`[图片:m1]` / `[视频:m1]`，整段交给映射表还原 */
-const MEDIA_BOOK_TOKEN = /\[(?:图片|视频):m\d+\]/g
+const MEDIA_BOOK_TOKEN = /\[(图片|视频)\s*[:：]\s*m(\d+)\]/g
 
 /**
  * 没有映射表时的兜底：模型抄回来的短编号占位符 `[图片:m1]` 无从还原地址，
  * 把编号尾巴剥掉，退成不带地址的 `[图片]`——渲染层认识这个形态。
  */
 function resolveMediaUrls(content: string): string {
-  return content.replace(MEDIA_BOOK_TOKEN, (match) => `[${match.slice(1, match.indexOf(':'))}]`)
+  return content.replace(MEDIA_BOOK_TOKEN, (_, kind: string) => `[${kind}]`)
 }
 
 function buildContext(
