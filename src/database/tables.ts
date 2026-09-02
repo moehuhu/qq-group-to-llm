@@ -19,6 +19,8 @@ export interface MessageRecord {
    */
   avatar: string
   content: string
+  /** 消息图片缓存：原始 URL → data URL，JSON 文本存储 */
+  media: string
   timestamp: Date
   messageId: string
 }

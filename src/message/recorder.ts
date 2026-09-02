@@ -128,7 +128,7 @@ function serializeNodes(nodes: Element[], serializer: Serializer, nested = false
     if (el.type === 'text') {
       return el.attrs['content'] ?? ''
     } else if (el.type === 'img' || el.type === 'image') {
-      return mediaToken('图片', src(el), !nested && config.recordImages)
+      return mediaToken('图片', src(el), !nested)
     } else if (el.type === 'video' || el.type === 'audio' || el.type === 'file') {
       // 落到下面的兜底分支会存成 `[video]`，跟转发卡片那边解析出来的 `[视频]` 对不上，
       // 渲染和统计就得认两套词
@@ -247,7 +247,10 @@ function droppedAttachments(session: Session, config: Config): string {
   const seen = mediaUrls(session.elements ?? [])
   return rawAttachments(session)
     .filter((item) => item.url && !seen.has(item.url))
-    .map((item) => mediaToken(mediaKind(item.content_type), item.url, config.recordImages))
+    .map((item) => {
+      const kind = mediaKind(item.content_type)
+      return mediaToken(kind, item.url, kind === '图片' ? true : config.recordImages)
+    })
     .join('')
 }
 
@@ -319,7 +322,27 @@ function stripCardPlaceholder(body: string): string {
     .trim()
 }
 
-function buildRecord(session: Session, config: Config, book: NameBook): MessageRecord {
+async function cacheImages(
+  ctx: Context,
+  content: string,
+  log: ReturnType<typeof logger>,
+): Promise<string> {
+  const urls = [...content.matchAll(/\[图片\]\((https?:\/\/[^\s)]+)\)/g)]
+    .map((match) => match[1])
+  const cached: { url: string, data: string }[] = []
+  for (const url of [...new Set(urls)]) {
+    try {
+      const data = await ctx.http.get<ArrayBuffer>(url, { responseType: 'arraybuffer' })
+      const base64 = Buffer.from(data).toString('base64')
+      cached.push({ url, data: `data:image/jpeg;base64,${base64}` })
+    } catch (error) {
+      log.warn(`图片缓存失败，保留原链接 ${url}:`, error)
+    }
+  }
+  return JSON.stringify(cached)
+}
+
+async function buildRecord(ctx: Context, session: Session, config: Config, book: NameBook, log: ReturnType<typeof logger>): Promise<MessageRecord> {
   const suffix = session.messageId ||
     `${session.selfId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const serializer: Serializer = { config, mention: mentionResolver(session, book) }
@@ -351,6 +374,7 @@ function buildRecord(session: Session, config: Config, book: NameBook): MessageR
     // 改为按人存进 qq_group_avatars（见 avatar.ts），这一列只留着读老记录
     avatar: '',
     content,
+    media: await cacheImages(ctx, content, log),
     timestamp: new Date(session.timestamp),
     messageId: session.messageId || '',
   }
@@ -379,7 +403,7 @@ export function applyMessageListener(ctx: Context, config: Config) {
     }
     // 说过话的人，回头被 @ 时就认得出——QQ 的 at 元素上只有一个 openid
     rememberName(book, session.platform, session.userId, session.username)
-    const record = buildRecord(session, config, book)
+    const record = await buildRecord(ctx, session, config, book, log)
     if (!record.content) {
       // 一个字都没解析出来的消息不入库：空记录白占一条条数、把人均字数往下拉，
       // 投喂给模型的文本里还留一行没有内容的发言。

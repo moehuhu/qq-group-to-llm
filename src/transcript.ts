@@ -39,6 +39,11 @@ export interface MediaBook {
   resolve(token?: string | null): string | undefined
 }
 
+interface CachedMedia {
+  url?: string
+  data?: string
+}
+
 /** 为一批消息建媒体映射表。一张表一次分析，编号只在本次分析内有效 */
 export function buildMediaBook(messages: MessageRecord[]): MediaBook {
   // 原始占位符 → 短编号占位形态（`[图片](url)` → `[图片:m1]`），供 maskMediaContent 替换
@@ -46,14 +51,25 @@ export function buildMediaBook(messages: MessageRecord[]): MediaBook {
   // 短编号 → 原始占位符，供 resolve 把模型抄回的编号还原成地址
   const byToken = new Map<string, string>()
   for (const message of messages) {
+    let cached: CachedMedia[] = []
+    try {
+      const value = JSON.parse(message.media || '[]')
+      if (Array.isArray(value)) cached = value
+    } catch {
+      // 兼容新增字段前的历史记录
+    }
+    const cachedData = new Map(cached
+      .filter((item) => item.url && item.data)
+      .map((item) => [item.url!, item.data!]))
     for (const match of String(message.content ?? '').matchAll(IMAGE_PLACEHOLDER)) {
       // 没地址的裸占位符没得省，只收带地址的
       if (!match[2]) continue
       const raw = match[0]
+      const value = cachedData.get(match[2])
       if (tokens.has(raw)) continue
       const token = `[${match[1]}:m${tokens.size + 1}]`
       tokens.set(raw, token)
-      byToken.set(token, raw)
+      byToken.set(token, value ? raw.replace(match[2], value) : raw)
     }
   }
   return {

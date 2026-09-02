@@ -15,6 +15,7 @@ export function extendModel(ctx: Context) {
     username: 'string',
     avatar: 'text',
     content: 'text',
+    media: 'text',
     timestamp: 'timestamp',
     messageId: 'string',
   }, {
