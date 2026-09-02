@@ -46,10 +46,10 @@ export async function renderHtmlToImage(
             image.addEventListener('load', resolve, { once: true })
             image.addEventListener('error', resolve, { once: true })
           }))
-        // 单张图卡住不该拖垮整次渲染，最多等 10 秒
+        // 单张图卡住不该拖垮整次渲染，最多等 60 秒
         return Promise.race([
           Promise.all(pending),
-          new Promise((resolve) => setTimeout(resolve, 10000)),
+          new Promise((resolve) => setTimeout(resolve, 60000)),
         ])
       })
 
