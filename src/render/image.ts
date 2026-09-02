@@ -15,6 +15,17 @@ export function canRenderImage(ctx: Context, config: Config): boolean {
   return config.renderImage && !!ctx.puppeteer
 }
 
+function redactImageUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return value
+  }
+}
+
 /**
  * 把 HTML 截成图片，返回可直接发送的图片元素字符串。
  * 失败返回 null——调用方据此回退到文本。
@@ -39,19 +50,35 @@ export async function renderHtmlToImage(
       })
 
       // 头像等远程图片要等加载完再截，否则会拍到空白占位
-      await page.evaluate(() => {
-        const pending = Array.from(document.images)
+      const failedImages = await page.evaluate(async (): Promise<string[]> => {
+        const failed: string[] = []
+        const images = Array.from(document.images)
+        for (const image of images) {
+          image.addEventListener('error', () => {
+            failed.push(image.currentSrc || image.src)
+          }, { capture: true, once: true })
+          if (image.complete && image.naturalWidth === 0) {
+            failed.push(image.currentSrc || image.src)
+          }
+        }
+
+        const pending = images
           .filter((image) => !image.complete)
           .map((image) => new Promise((resolve) => {
             image.addEventListener('load', resolve, { once: true })
             image.addEventListener('error', resolve, { once: true })
           }))
         // 单张图卡住不该拖垮整次渲染，最多等 60 秒
-        return Promise.race([
+        await Promise.race([
           Promise.all(pending),
           new Promise((resolve) => setTimeout(resolve, 60000)),
         ])
+        return failed
       })
+
+      for (const url of failedImages) {
+        log.warn(`[${task}] 图片链接加载失败: ${redactImageUrl(url)}`)
+      }
 
       const card = await page.$('#card')
       return next(card ?? undefined)
