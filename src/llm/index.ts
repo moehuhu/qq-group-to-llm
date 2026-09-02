@@ -495,6 +495,8 @@ export class LLMService extends Service {
    * 截取带学术要素的冷幽默对话片段。
    * 模型直接返回每轮的发送者昵称与发言原文，原文不再按 id 回查；
    * 头像只回一个短编号 uid，由头像映射表（avatar.ts）还原成地址。
+   * 正文里的图片同样只回短编号（`[图片:m1]`，见 transcript.ts 的 MediaBook），
+   * 由分析层还原成 `[图片](url)` 后再交给渲染层。
    * 模型认为没有符合条件的片段时返回空数组。
    */
   async analyzeHighlightDialogues(

@@ -4,7 +4,7 @@ import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
-import { toPromptJson } from '../transcript'
+import { buildMediaBook, IMAGE_PLACEHOLDER, type MediaBook, toPromptJson } from '../transcript'
 import { loadAvatarBook, type AvatarBook } from '../avatar'
 import { MessageRecord, TABLE } from '../database'
 import type {
@@ -64,19 +64,36 @@ export function excludeUsers(messages: MessageRecord[], blocked: string[]): Mess
  * 供模型把发言人原样照抄进返回结果（高光对话出图用）。
  * 头像地址留在表里不进提示词——省上下文，也省得模型抄错长地址。
  * 没有头像的人不进表，也就不带 uid，模型把该字段留空即可。
+ *
+ * 给了媒体映射表 medias 时，正文里的图片占位符会被换成短编号 `[图片:m1]`，
+ * 地址只留在表里不进提示词（与头像 uid 同一套思路：省上下文、防抄错），
+ * 模型照抄短编号后由 normalizeDialogue 还原成 `[图片](url)`。
  */
 export function formatForPrompt(
   messages: MessageRecord[],
   time: TimeFormatter,
   avatars?: AvatarBook,
+  medias?: MediaBook,
 ): string {
-  return toPromptJson(messages, time, { avatars })
+  return toPromptJson(messages, time, { avatars, medias })
 }
 
 /** 把模型返回的条目压成一句可读的摘要，日志里用它指出具体丢的是哪一条 */
 function summarizeDropped(text: string | undefined | null, limit = 50): string {
   const cleaned = String(text ?? '').replace(/\s+/g, ' ').trim()
   return cleaned ? `「${cleaned.slice(0, limit)}${cleaned.length > limit ? '…' : ''}」` : '（无正文）'
+}
+
+/** 若把媒体地址逐条写进提示词，这些地址一共要占多少字符——日志里用它说明省了多少 */
+function mediaInlineChars(messages: MessageRecord[], medias: MediaBook): number {
+  let sum = 0
+  for (const message of messages) {
+    for (const match of String(message.content ?? '').matchAll(IMAGE_PLACEHOLDER)) {
+      const url = match[2]
+      if (url && medias.tokens.has(match[0])) sum += url.length
+    }
+  }
+  return sum
 }
 
 /** 规整模型返回的金句候选：只认 sender 与 content 与 reason，缺内容的直接丢弃 */
@@ -96,18 +113,23 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  *
  * 模型直接返回每轮的发送者昵称、头像与发言原文，不做回查校验。
+ * 原文里的图片短编号（`[图片:m1]`）顺带还原成 `[图片](url)` 形态——渲染层认识的就是它。
  */
 export function normalizeDialogue(
   item: Partial<HighlightDialogue<HighlightLineDraft>> | undefined,
   maxLines: number,
   avatars?: AvatarBook,
+  medias?: MediaBook,
 ): HighlightDialogue<HighlightLine> | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
     .map((line) => {
       const sender = String(line?.sender ?? '').trim()
       return {
         sender,
-        content: String(line?.content ?? '').trim(),
+        content: resolveMediaTokens(
+          String(line?.content ?? '').trim(),
+          medias,
+        ),
         // 模型抄回来的是编号，这里按表还原成地址；编号抄丢了就拿昵称在表里找一次。
         // 没有表（旧调用）时只认模型直接抄回来的地址
         avatar: avatars
@@ -125,6 +147,32 @@ export function normalizeDialogue(
     lines,
     reason: item?.reason?.trim() || undefined,
   }
+}
+
+/**
+ * 把模型抄回来的媒体短编号还原成原始占位符。
+ *
+ * 模型的两种回法都要接得住：
+ * - 给了映射表时照抄 `[图片:m1]`，按表还原成 `[图片](url)`；
+ * - 老提示词（或模型自作主张）直接抄 `[图片](url)`，原样放行。
+ * 有短编号却查不到（比如编号抄丢了一位）时保留原样——渲染层不认识它，
+ * 会当普通文字排出来，至少不会静默丢图。
+ */
+function resolveMediaTokens(content: string, medias?: MediaBook): string {
+  if (!content) return content
+  if (!medias) return resolveMediaUrls(content)
+  return content.replace(MEDIA_BOOK_TOKEN, (match) => medias.resolve(match) ?? match)
+}
+
+/** 模型抄回的短编号占位形态：`[图片:m1]` / `[视频:m1]`，整段交给映射表还原 */
+const MEDIA_BOOK_TOKEN = /\[(?:图片|视频):m\d+\]/g
+
+/**
+ * 没有映射表时的兜底：模型抄回来的短编号占位符 `[图片:m1]` 无从还原地址，
+ * 把编号尾巴剥掉，退成不带地址的 `[图片]`——渲染层认识这个形态。
+ */
+function resolveMediaUrls(content: string): string {
+  return content.replace(MEDIA_BOOK_TOKEN, (match) => `[${match.slice(1, match.indexOf(':'))}]`)
 }
 
 function buildContext(
@@ -283,16 +331,20 @@ export async function analyzeDialogues(
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
   // 出图要头像，但地址不进提示词：先从库里取出这批人的「用户 ID ↔ 头像地址」映射表，
-  // 投喂时每条只带表里的短编号 uid，模型照抄编号，落地时再还原成地址
+  // 投喂时每条只带表里的短编号 uid，模型照抄编号，落地时再还原成地址。
+  // 图片同理：正文里的媒体占位符换成短编号 `[图片:m1]`，地址只留在映射表里——
+  // QQ 的图片地址动辄一两百字符，逐条展开既烧上下文、长地址又容易被模型抄串行
   const avatars = await loadAvatarBook(ctx, usable)
-  const messagesText = formatForPrompt(usable, time, avatars)
+  const medias = buildMediaBook(usable)
+  const messagesText = formatForPrompt(usable, time, avatars, medias)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}` +
-    (avatars.size ? `，头像映射表 ${avatars.size} 人（头像地址不进提示词，省下约 ${avatars.inlineChars} 字）` : ''))
+    (avatars.size ? `，头像映射表 ${avatars.size} 人（头像地址不进提示词，省下约 ${avatars.inlineChars} 字）` : '') +
+    (medias.tokens.size ? `，媒体映射表 ${medias.tokens.size} 项（图片地址不进提示词，省下约 ${mediaInlineChars(usable, medias)} 字）` : ''))
 
   const raw = await ctx.qqGroupLlm.analyzeHighlightDialogues(messagesText, context, ticket)
 
-  const normalized = raw.map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars))
+  const normalized = raw.map((item) => normalizeDialogue(item, config.maxHighlightLines, avatars, medias))
   const dialogues = normalized
     .filter((item): item is HighlightDialogue<HighlightLine> => !!item)
     .slice(0, config.maxHighlightDialogues)
@@ -301,7 +353,7 @@ export async function analyzeDialogues(
   const droppedDetails: string[] = []
   let dialogueRank = 0 // 第几段有效对话（归一化后按原始顺序计），用于判断是否超出上限
   for (const [index, item] of raw.entries()) {
-    const dialogue = normalizeDialogue(item, config.maxHighlightLines, avatars)
+    const dialogue = normalizeDialogue(item, config.maxHighlightLines, avatars, medias)
     if (!dialogue) {
       const title = summarizeDropped(item?.title)
       const lineCount = Array.isArray(item?.lines)

@@ -57,11 +57,14 @@ export interface HighlightLine {
 }
 
 /**
- * 模型返回的一轮发言（尚未还原头像）。
+ * 模型返回的一轮发言（尚未还原头像与媒体）。
  *
  * 头像地址不进提示词，投喂时每条只带一个短编号 uid，模型照抄回来，
  * 由 avatar.ts 的映射表还原成地址；avatar 只为兼容改过提示词、
  * 仍让模型直接抄地址的旧配置而保留。
+ *
+ * content 里的图片同理：投喂时被替换成短编号 `[图片:m1]`（见 transcript.ts 的
+ * MediaBook），模型照抄回来后在 analysis/group.ts 还原成 `[图片](url)`。
  */
 export interface HighlightLineDraft {
   sender?: string
