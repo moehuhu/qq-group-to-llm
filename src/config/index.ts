@@ -35,6 +35,8 @@ export interface Config {
   recordQuotes: boolean
   /** 消息保留天数（0 表示永久保留） */
   retentionDays: number
+  /** 图片缓存保留天数（0 表示永久保留） */
+  mediaRetentionDays: number
   /** 统计与展示所用的时区（IANA 名称），留空跟随系统 */
   timezone: string
 
@@ -124,6 +126,7 @@ export const Config: Schema<Config> = Schema.intersect([
     recordImages: Schema.boolean().default(false).description('是否记录图片与视频的地址（关闭时只留 `[图片]` `[视频]` 占位符。图片地址用于出图时还原成真正的图片；视频只作留存，报告里一律画成播放占位块）'),
     recordQuotes: Schema.boolean().default(true).description('是否记录被引用消息的发言人与原话摘要（存成正文首行 `[引用 张三] 原话`；关闭时只留 `[引用]`）'),
     retentionDays: Schema.number().default(0).min(0).description('消息保留天数，0 表示永久保留'),
+    mediaRetentionDays: Schema.number().default(30).min(0).description('图片缓存保留天数，按最后更新时间清理，0 表示永久保留'),
     timezone: Schema.string().default('').description('统计与展示所用的时区，填 IANA 名称如 `Asia/Shanghai`。留空跟随运行 Koishi 的机器时区。影响活跃时段柱状图的分桶、报告里的时间范围，以及投喂给模型的逐条时间戳'),
   }).description('消息记录'),
 
