@@ -33,7 +33,7 @@ export function escapeHtml(value: string | undefined | null): string {
  * recordImages 关闭时（或平台没给地址）只剩 `[图片]` `[视频]`。
  * 语音、文件不在这里——它们没什么可展示的，当普通文字排就够了。
  */
-const MEDIA_PATTERN = /\[(图片|视频)\](?:\((https?:\/\/[^\s)]+)\))?/g
+const MEDIA_PATTERN = /\[(图片|视频)\](?:\(((?:https?:\/\/|data:image\/)[^\s)]+)\))?/g
 
 /**
  * 正文里的提及：`[@张三]`，认不出是谁时是 `[@某人]`。
@@ -50,7 +50,7 @@ function mentionTag(name: string): string {
 /** 只放行 http(s)，别的协议一律当没有地址处理 */
 function safeImageUrl(url: string | undefined): string | undefined {
   if (!url) return undefined
-  return /^https?:\/\//i.test(url) ? url : undefined
+  return /^(?:https?:\/\/|data:image\/)/i.test(url) ? url : undefined
 }
 
 /**

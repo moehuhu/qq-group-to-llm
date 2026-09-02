@@ -3,8 +3,9 @@
  *
  * 这里只管「怎么排」：正文一个字都不动——清洗归 text.ts，措辞归提示词模板。
  */
+import type { Context } from 'koishi'
 import type { AvatarBook } from './avatar'
-import type { MessageRecord } from './database'
+import { MEDIA_TABLE, type MediaRecord, type MessageRecord } from './database'
 import type { TimeFormatter } from './time'
 
 /** 续行缩进。转发卡片内部的多行发言排版还在用（text.ts），LLM 投喂已改为 JSON 结构，不再依赖它 */
@@ -39,28 +40,33 @@ export interface MediaBook {
   resolve(token?: string | null): string | undefined
 }
 
-interface CachedMedia {
-  url?: string
-  data?: string
+export async function loadMediaCache(
+  ctx: Context,
+  messages: MessageRecord[],
+): Promise<Map<string, string>> {
+  const urls = [...new Set(messages.flatMap((message) =>
+    [...String(message.content ?? '').matchAll(IMAGE_PLACEHOLDER)]
+      .filter((match) => match[1] === '图片' && match[2])
+      .map((match) => match[2]!)))]
+  const records = await Promise.all(urls.map(async (url) => {
+    const platform = messages.find((message) => message.content.includes(url))?.platform
+    if (!platform) return undefined
+    const [record] = await ctx.database.select(MEDIA_TABLE)
+      .where({ platform, url })
+      .execute()
+    return record as MediaRecord | undefined
+  }))
+  return new Map(records.filter((record): record is MediaRecord => !!record && !!record.data)
+    .map((record) => [record.url, record.data]))
 }
 
 /** 为一批消息建媒体映射表。一张表一次分析，编号只在本次分析内有效 */
-export function buildMediaBook(messages: MessageRecord[]): MediaBook {
+export function buildMediaBook(messages: MessageRecord[], cachedData = new Map<string, string>): MediaBook {
   // 原始占位符 → 短编号占位形态（`[图片](url)` → `[图片:m1]`），供 maskMediaContent 替换
   const tokens = new Map<string, string>()
   // 短编号 → 原始占位符，供 resolve 把模型抄回的编号还原成地址
   const byToken = new Map<string, string>()
   for (const message of messages) {
-    let cached: CachedMedia[] = []
-    try {
-      const value = JSON.parse(message.media || '[]')
-      if (Array.isArray(value)) cached = value
-    } catch {
-      // 兼容新增字段前的历史记录
-    }
-    const cachedData = new Map(cached
-      .filter((item) => item.url && item.data)
-      .map((item) => [item.url!, item.data!]))
     for (const match of String(message.content ?? '').matchAll(IMAGE_PLACEHOLDER)) {
       // 没地址的裸占位符没得省，只收带地址的
       if (!match[2]) continue

@@ -4,7 +4,7 @@ import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
-import { buildMediaBook, IMAGE_PLACEHOLDER, type MediaBook, toPromptJson } from '../transcript'
+import { buildMediaBook, IMAGE_PLACEHOLDER, loadMediaCache, type MediaBook, toPromptJson } from '../transcript'
 import { loadAvatarBook, type AvatarBook } from '../avatar'
 import { MessageRecord, TABLE } from '../database'
 import type {
@@ -336,7 +336,8 @@ export async function analyzeDialogues(
   // 图片同理：正文里的媒体占位符换成短编号 `[图片:m1]`，地址只留在映射表里——
   // QQ 的图片地址动辄一两百字符，逐条展开既烧上下文、长地址又容易被模型抄串行
   const avatars = await loadAvatarBook(ctx, usable)
-  const medias = buildMediaBook(usable)
+  const mediaCache = await loadMediaCache(ctx, usable)
+  const medias = buildMediaBook(usable, mediaCache)
   const messagesText = formatForPrompt(usable, time, avatars, medias)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}` +

@@ -3,6 +3,7 @@
 export const TABLE = 'qq_group_messages'
 export const PERSONA_TABLE = 'qq_group_personas'
 export const AVATAR_TABLE = 'qq_group_avatars'
+export const MEDIA_TABLE = 'qq_group_media'
 
 export interface MessageRecord {
   id: string
@@ -19,8 +20,6 @@ export interface MessageRecord {
    */
   avatar: string
   content: string
-  /** 消息图片缓存：原始 URL → data URL，JSON 文本存储 */
-  media: string
   timestamp: Date
   messageId: string
 }
@@ -58,10 +57,21 @@ export interface AvatarRecord {
   updatedAt: Date
 }
 
+/** 一张远程图片的本地缓存，按 URL 复用，避免消息表重复存储图片数据 */
+export interface MediaRecord {
+  id: string
+  platform: string
+  url: string
+  data: string
+  mime: string
+  updatedAt: Date
+}
+
 declare module 'koishi' {
   interface Tables {
     qq_group_messages: MessageRecord
     qq_group_personas: PersonaRecord
     qq_group_avatars: AvatarRecord
+    qq_group_media: MediaRecord
   }
 }

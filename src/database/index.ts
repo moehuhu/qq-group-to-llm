@@ -1,5 +1,5 @@
 import { Context } from 'koishi'
-import { AVATAR_TABLE, PERSONA_TABLE, TABLE } from './tables'
+import { AVATAR_TABLE, MEDIA_TABLE, PERSONA_TABLE, TABLE } from './tables'
 
 export * from './tables'
 
@@ -15,7 +15,6 @@ export function extendModel(ctx: Context) {
     username: 'string',
     avatar: 'text',
     content: 'text',
-    media: 'text',
     timestamp: 'timestamp',
     messageId: 'string',
   }, {
@@ -28,6 +27,17 @@ export function extendModel(ctx: Context) {
     userId: 'string',
     username: 'string',
     avatar: 'text',
+    updatedAt: 'timestamp',
+  }, {
+    primary: 'id',
+  })
+
+  ctx.database.extend(MEDIA_TABLE, {
+    id: 'string',
+    platform: 'string',
+    url: 'text',
+    data: 'text',
+    mime: 'string',
     updatedAt: 'timestamp',
   }, {
     primary: 'id',

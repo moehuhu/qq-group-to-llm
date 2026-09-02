@@ -1,6 +1,7 @@
 import { Context, Element, Session, Universal } from 'koishi'
+import { createHash } from 'node:crypto'
 import type { Config } from '../config'
-import { MessageRecord, TABLE } from '../database'
+import { MEDIA_TABLE, MessageRecord, TABLE } from '../database'
 import { rememberAvatar, type AvatarCache } from '../avatar'
 import { logger } from '../logger'
 import { AT_ALL_NAME, atToken, cardBlock, cleanContent, faceToken, mediaKind, mediaToken } from '../text'
@@ -324,22 +325,27 @@ function stripCardPlaceholder(body: string): string {
 
 async function cacheImages(
   ctx: Context,
-  content: string,
+  record: MessageRecord,
   log: ReturnType<typeof logger>,
-): Promise<string> {
-  const urls = [...content.matchAll(/\[图片\]\((https?:\/\/[^\s)]+)\)/g)]
+): Promise<void> {
+  const urls = [...record.content.matchAll(/\[图片\]\((https?:\/\/[^\s)]+)\)/g)]
     .map((match) => match[1])
-  const cached: { url: string, data: string }[] = []
   for (const url of [...new Set(urls)]) {
     try {
       const data = await ctx.http.get<ArrayBuffer>(url, { responseType: 'arraybuffer' })
       const base64 = Buffer.from(data).toString('base64')
-      cached.push({ url, data: `data:image/jpeg;base64,${base64}` })
+      await ctx.database.upsert(MEDIA_TABLE, [{
+        id: `${record.platform}_${createHash('sha256').update(url).digest('hex')}`,
+        platform: record.platform,
+        url,
+        data: `data:image/jpeg;base64,${base64}`,
+        mime: 'image/jpeg',
+        updatedAt: new Date(),
+      }])
     } catch (error) {
       log.warn(`图片缓存失败，保留原链接 ${url}:`, error)
     }
   }
-  return JSON.stringify(cached)
 }
 
 async function buildRecord(ctx: Context, session: Session, config: Config, book: NameBook, log: ReturnType<typeof logger>): Promise<MessageRecord> {
@@ -374,7 +380,6 @@ async function buildRecord(ctx: Context, session: Session, config: Config, book:
     // 改为按人存进 qq_group_avatars（见 avatar.ts），这一列只留着读老记录
     avatar: '',
     content,
-    media: await cacheImages(ctx, content, log),
     timestamp: new Date(session.timestamp),
     messageId: session.messageId || '',
   }
@@ -414,6 +419,7 @@ export function applyMessageListener(ctx: Context, config: Config) {
     }
     try {
       await ctx.database.create(TABLE, record)
+      await cacheImages(ctx, record, log)
       recorded++
       log.debug(`已记录 #${recorded} ${record.channelId} ${record.username}(${record.userId}): ${record.content.slice(0, 60)}`)
     } catch (error) {
