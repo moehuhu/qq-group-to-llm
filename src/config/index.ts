@@ -37,6 +37,10 @@ export interface Config {
   retentionDays: number
   /** 图片缓存保留天数（0 表示永久保留） */
   mediaRetentionDays: number
+  /** 图片缓存最多保留条数（0 表示不限制） */
+  mediaCacheMaxEntries: number
+  /** 单张图片缓存上限，超过后只保留原链接（0 表示不限制） */
+  mediaCacheMaxImageBytes: number
   /** 统计与展示所用的时区（IANA 名称），留空跟随系统 */
   timezone: string
 
@@ -127,6 +131,10 @@ export const Config: Schema<Config> = Schema.intersect([
     recordQuotes: Schema.boolean().default(true).description('是否记录被引用消息的发言人与原话摘要（存成正文首行 `[引用 张三] 原话`；关闭时只留 `[引用]`）'),
     retentionDays: Schema.number().default(0).min(0).description('消息保留天数，0 表示永久保留'),
     mediaRetentionDays: Schema.number().default(30).min(0).description('图片缓存保留天数，按最后更新时间清理，0 表示永久保留'),
+    mediaCacheMaxEntries: Schema.number().default(0).min(0).max(1000).step(1)
+      .description('图片缓存最多保留条数，0 表示不限制（仅按保留天数清理）'),
+    mediaCacheMaxImageBytes: Schema.number().default(1024 * 1024).min(0).max(20 * 1024 * 1024).step(1024)
+      .description('单张图片缓存上限，超过后只保留原链接，0 表示不限制'),
     timezone: Schema.string().default('').description('统计与展示所用的时区，填 IANA 名称如 `Asia/Shanghai`。留空跟随运行 Koishi 的机器时区。影响活跃时段柱状图的分桶、报告里的时间范围，以及投喂给模型的逐条时间戳'),
   }).description('消息记录'),
 

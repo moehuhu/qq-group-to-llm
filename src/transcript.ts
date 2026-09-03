@@ -3,12 +3,13 @@
  *
  * 排版这部分只管「怎么排」：正文一个字都不动——清洗归 text.ts，措辞归提示词模板。
  * 图片这部分管两趟替换：投喂前把地址换成短编号（省上下文、防模型抄错），
- * 出图前把地址换成 media 表里缓存的图片数据（QQ 的图链只活几小时）。
- * 后者要读库，是这个文件里唯一碰 Context 的地方。
+ * 出图前把地址换成媒体缓存里的图片数据（QQ 的图链只活几小时）。
+ * 后者要读缓存（现在是文件存储，见 media.ts），是这个文件里唯一碰 Context 的地方。
  */
 import type { Context } from 'koishi'
 import type { AvatarBook } from './avatar'
-import { MEDIA_TABLE, type MediaRecord, type MessageRecord } from './database'
+import type { MessageRecord } from './database'
+import { loadMedia } from './media'
 import { logger } from './logger'
 import type { TimeFormatter } from './time'
 
@@ -53,10 +54,10 @@ export function imageUrls(texts: readonly string[]): string[] {
 }
 
 /**
- * 从 qq_group_media 按地址取已缓存的图片：`url` → 图片数据（`data:image/jpeg;base64,…`）。
+ * 按地址取已缓存的图片：`url` → 图片数据（`data:image/jpeg;base64,…`）。
  *
- * 表里查不到的地址不进映射——入库时就没抓下来，或者已过 mediaRetentionDays 被清掉了；
- * 读表失败同样退回空映射。两种情况调用方都保留原始地址：图是锦上添花，不该让整次分析失败。
+ * 缓存里查不到的地址不进映射——入库时就没抓下来，或者已过保留期被清掉了；
+ * 读缓存失败同样退回空映射。两种情况调用方都保留原始地址：图是锦上添花，不该让整次分析失败。
  */
 export async function loadMediaData(
   ctx: Context,
@@ -64,18 +65,8 @@ export async function loadMediaData(
   urls: readonly string[],
 ): Promise<Map<string, string>> {
   if (!urls.length) return new Map()
-  try {
-    const records = await ctx.database
-      .select(MEDIA_TABLE)
-      .where({ platform, url: { $in: [...urls] } } as never)
-      .execute() as MediaRecord[]
-    return new Map(records
-      .filter((record) => record.data)
-      .map((record) => [record.url, record.data]))
-  } catch (error) {
-    logger(ctx).warn(`读取 ${platform} 的图片缓存失败，本次保留原始地址:`, error)
-    return new Map()
-  }
+  const entries = await Promise.all(urls.map(async (url) => [url, await loadMedia(ctx, url)] as const))
+  return new Map(entries.filter((entry): entry is [string, string] => !!entry[1]))
 }
 
 /**
@@ -102,13 +93,13 @@ export async function loadMediaCache(
 }
 
 /**
- * 把正文里的图片地址换成 media 表里缓存下来的图片数据。
+ * 把正文里的图片地址换成缓存下来的图片数据。
  *
  * QQ 的图片地址只活几小时，出图时再去拉多半是一块空白（渲染层会退回「图片」小标签）。
- * 消息入库时已经把图抓下来存进了 media 表（见 message/recorder.ts），这里把
+ * 消息入库时已经把图抓下来存进了本地缓存（见 message/recorder.ts 与 media.ts），这里把
  * `[图片](https://…)` 原地换成 `[图片](data:image/jpeg;base64,…)`——渲染层认识这个形态
  * （见 render/html.ts 的 MEDIA_PATTERN），换完不必再动渲染层。
- * 表里没有的地址原样保留：拉不到那张图，也比连占位符都丢了好。
+ * 缓存里没有的地址原样保留：拉不到那张图，也比连占位符都丢了好。
  */
 export function inlineMediaData(text: string, cache: ReadonlyMap<string, string>): string {
   if (!cache.size) return text
@@ -118,7 +109,7 @@ export function inlineMediaData(text: string, cache: ReadonlyMap<string, string>
   })
 }
 
-/** 一批文本：里头的图片地址一次查库、一并换成 media 表里的缓存 */
+/** 一批文本：里头的图片地址一次取缓存、一并换成缓存里的图片数据 */
 export async function inlineMediaTexts(
   ctx: Context,
   platform: string,
@@ -128,10 +119,10 @@ export async function inlineMediaTexts(
   if (!urls.length) return [...texts]
   const cache = await loadMediaData(ctx, platform, urls)
   if (!cache.size) {
-    logger(ctx).info(`${urls.length} 张图都不在 media 表里，保留原始地址（图链可能已过期）`)
+    logger(ctx).info(`${urls.length} 张图都不在缓存里，保留原始地址（图链可能已过期）`)
     return [...texts]
   }
-  logger(ctx).info(`图片改从 media 表取，命中 ${cache.size}/${urls.length} 张` +
+  logger(ctx).info(`图片改从缓存取，命中 ${cache.size}/${urls.length} 张` +
     (cache.size < urls.length ? '，其余保留原始地址' : ''))
   return texts.map((text) => inlineMediaData(text, cache))
 }

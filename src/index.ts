@@ -8,6 +8,7 @@ import { extendModel } from './database'
 import { LLMService } from './llm'
 import { applyMessageListener } from './message/recorder'
 import { applyRetentionCleanup } from './message/retention'
+import { migrateMediaToFiles } from './media'
 import { applyCommands } from './commands'
 import { createTimeFormatter } from './time'
 
@@ -64,6 +65,8 @@ export function apply(ctx: Context, config: Config) {
 
   applyConsole(ctx)
   extendModel(ctx)
+  // 升级自旧版本时，把库里残留的 base64 图片缓存迁到文件存储并清空表
+  void migrateMediaToFiles(ctx)
   applyMessageListener(ctx, config)
   applyRetentionCleanup(ctx, config)
 

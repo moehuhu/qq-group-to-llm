@@ -1,8 +1,8 @@
 import { Context, Element, Session, Universal } from 'koishi'
-import { createHash } from 'node:crypto'
 import type { Config } from '../config'
-import { MEDIA_TABLE, MessageRecord, TABLE } from '../database'
+import { MessageRecord, TABLE } from '../database'
 import { rememberAvatar, type AvatarCache } from '../avatar'
+import { saveMedia } from '../media'
 import { logger } from '../logger'
 import { AT_ALL_NAME, atToken, cardBlock, cleanContent, faceToken, mediaKind, mediaToken } from '../text'
 
@@ -326,6 +326,7 @@ function stripCardPlaceholder(body: string): string {
 async function cacheImages(
   ctx: Context,
   record: MessageRecord,
+  config: Config,
   log: ReturnType<typeof logger>,
 ): Promise<void> {
   const urls = [...record.content.matchAll(/\[图片\]\((https?:\/\/[^\s)]+)\)/g)]
@@ -333,15 +334,7 @@ async function cacheImages(
   for (const url of [...new Set(urls)]) {
     try {
       const data = await ctx.http.get<ArrayBuffer>(url, { responseType: 'arraybuffer' })
-      const base64 = Buffer.from(data).toString('base64')
-      await ctx.database.upsert(MEDIA_TABLE, [{
-        id: `${record.platform}_${createHash('sha256').update(url).digest('hex')}`,
-        platform: record.platform,
-        url,
-        data: `data:image/jpeg;base64,${base64}`,
-        mime: 'image/jpeg',
-        updatedAt: new Date(),
-      }])
+      await saveMedia(ctx, url, record.platform, data, config)
     } catch (error) {
       log.warn(`图片缓存失败，保留原链接 ${url}:`, error)
     }
@@ -419,7 +412,7 @@ export function applyMessageListener(ctx: Context, config: Config) {
     }
     try {
       await ctx.database.create(TABLE, record)
-      await cacheImages(ctx, record, log)
+      await cacheImages(ctx, record, config, log)
       recorded++
       log.debug(`已记录 #${recorded} ${record.channelId} ${record.username}(${record.userId}): ${record.content.slice(0, 60)}`)
     } catch (error) {

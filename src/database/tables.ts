@@ -57,7 +57,11 @@ export interface AvatarRecord {
   updatedAt: Date
 }
 
-/** 一张远程图片的本地缓存，按 URL 复用，避免消息表重复存储图片数据 */
+/**
+ * 一张远程图片的缓存元数据（旧版把图片 base64 也存进这里）。
+ * 图片数据已改为文件存储（见 media.ts），此表仅用于启动时的一次性迁移，
+ * 迁移完成后清空，不再写入。
+ */
 export interface MediaRecord {
   id: string
   platform: string
