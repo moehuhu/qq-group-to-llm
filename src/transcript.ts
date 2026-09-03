@@ -13,12 +13,6 @@ import { loadMedia } from './media'
 import { logger } from './logger'
 import type { TimeFormatter } from './time'
 
-/** 续行缩进。转发卡片内部的多行发言排版还在用（text.ts），LLM 投喂已改为 JSON 结构，不再依赖它 */
-const CONTINUATION_INDENT = '    '
-
-/** 正文内部的换行。QQ 给的是 \n，\r 是别的平台或粘贴带进来的 */
-const LINE_BREAK = /\r\n|\r|\n/
-
 /**
  * 图片占位符：入库时的形态是 `[图片](url)`。
  *
@@ -190,15 +184,6 @@ export function resolveMediaTokens(content: string, medias?: MediaBook): string 
  */
 function stripMediaTokens(content: string): string {
   return content.replace(MEDIA_BOOK_TOKEN, (_, kind: string) => `[${kind}]`)
-}
-
-/**
- * 排一条记录：`head` 顶在行首，正文接在它后面，多出来的行缩进。
- * 正文是单行（绝大多数情况）时，结果与直接拼接完全一致。
- */
-export function layoutRecord(head: string, content: string | undefined | null): string {
-  const [first = '', ...rest] = String(content ?? '').split(LINE_BREAK)
-  return [head + first, ...rest.map((line) => CONTINUATION_INDENT + line)].join('\n')
 }
 
 export interface PromptMessageOptions {
