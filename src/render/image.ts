@@ -26,9 +26,13 @@ function redactImageUrl(value: string): string {
   }
 }
 
+/** 内联进 HTML 的图片数据（media 表里的缓存）。一张就是几万字符，日志里只留个长度 */
+const INLINE_IMAGE_DATA = /(data:image\/[\w.+-]+;base64,)([^"')\s]+)/g
+
 function formatHtmlForLog(html: string): string {
   let indent = 0
   return html
+    .replace(INLINE_IMAGE_DATA, (_, prefix: string, data: string) => `${prefix}…${data.length} 字`)
     .replace(/>\s*</g, '>\n<')
     .split('\n')
     .map((line) => line.trim())

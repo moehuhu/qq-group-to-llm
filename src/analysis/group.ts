@@ -4,7 +4,7 @@ import { logger } from '../logger'
 import { calculateStats } from './stats'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
-import { buildMediaBook, IMAGE_PLACEHOLDER, loadMediaCache, type MediaBook, toPromptJson } from '../transcript'
+import { buildMediaBook, IMAGE_PLACEHOLDER, loadMediaCache, type MediaBook, resolveMediaTokens, toPromptJson } from '../transcript'
 import { loadAvatarBook, type AvatarBook } from '../avatar'
 import { MessageRecord, TABLE } from '../database'
 import type {
@@ -147,33 +147,6 @@ export function normalizeDialogue(
     lines,
     reason: item?.reason?.trim() || undefined,
   }
-}
-
-/**
- * 把模型抄回来的媒体短编号还原成原始占位符。
- *
- * 模型的两种回法都要接得住：
- * - 给了映射表时照抄 `[图片:m1]`，按表还原成 `[图片](url)`；
- * - 老提示词（或模型自作主张）直接抄 `[图片](url)`，原样放行。
- * 有短编号却查不到（比如编号抄丢了一位）时保留原样——渲染层不认识它，
- * 会当普通文字排出来，至少不会静默丢图。
- */
-function resolveMediaTokens(content: string, medias?: MediaBook): string {
-  if (!content) return content
-  if (!medias) return resolveMediaUrls(content)
-  return content.replace(MEDIA_BOOK_TOKEN, (match, kind: string, token: string) =>
-    medias.resolve(`[${kind}:m${token}]`) ?? match)
-}
-
-/** 模型抄回的短编号占位形态：`[图片:m1]` / `[视频:m1]`，整段交给映射表还原 */
-const MEDIA_BOOK_TOKEN = /\[(图片|视频)\s*[:：]\s*m(\d+)\]/g
-
-/**
- * 没有映射表时的兜底：模型抄回来的短编号占位符 `[图片:m1]` 无从还原地址，
- * 把编号尾巴剥掉，退成不带地址的 `[图片]`——渲染层认识这个形态。
- */
-function resolveMediaUrls(content: string): string {
-  return content.replace(MEDIA_BOOK_TOKEN, (_, kind: string) => `[${kind}]`)
 }
 
 function buildContext(

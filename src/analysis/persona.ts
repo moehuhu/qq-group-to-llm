@@ -7,7 +7,7 @@ import { MessageRecord, PERSONA_TABLE, PersonaRecord, TABLE } from '../database'
 import { findAvatar } from '../avatar'
 import { resolveTimeFormatter, type TimeFormatter } from '../time'
 import { cleanContent } from '../text'
-import { toPromptJson } from '../transcript'
+import { buildMediaBook, inlineMediaTexts, type MediaBook, resolveMediaTokens, toPromptJson } from '../transcript'
 import type { UserPersonaProfile } from '../types'
 
 export interface PersonaTarget {
@@ -61,9 +61,13 @@ async function collectMessages(
 /**
  * 渲染成投喂给 LLM 的 JSON 数组字符串。每条消息带归属标记（群/频道）与发送者昵称，
  * 模型据此判断每句的归属；evidence 由模型照抄原文，不含发送者（画像针对同一人）。
+ *
+ * 给了媒体映射表时，正文里的图片占位符换成短编号 `[图片:m1]`，地址只留在表里
+ * （与高光对话同一套，见 transcript.ts 的 MediaBook）：QQ 的图片地址动辄一两百字符，
+ * 逐条展开既烧上下文，长地址还容易被模型抄串行——抄串了出图时就查不到那张图。
  */
-function formatForPrompt(messages: MessageRecord[], time: TimeFormatter): string {
-  return toPromptJson(messages, time, { withScope: true, withDate: true })
+function formatForPrompt(messages: MessageRecord[], time: TimeFormatter, medias?: MediaBook): string {
+  return toPromptJson(messages, time, { medias, withScope: true, withDate: true })
 }
 
 async function loadRecord(ctx: Context, id: string): Promise<PersonaRecord | undefined> {
@@ -119,8 +123,8 @@ export interface PersonaOutcome {
   reason?: string
 }
 
-/** 生成（或复用）用户画像 */
-export async function resolvePersona(
+/** 生成（或复用）用户画像。图片还是原始地址，出图前由 resolvePersona 换成 media 表里的缓存 */
+async function generatePersona(
   ctx: Context,
   config: Config,
   target: PersonaTarget,
@@ -174,10 +178,16 @@ export async function resolvePersona(
   const username = messages[messages.length - 1].username || target.username
   // 升级前的老记录里还带着发言当时的头像，映射表没有这个人时拿它兜底
   const recordedAvatar = [...messages].reverse().find((message) => message.avatar)?.avatar
+  // 代表发言里可能带图。图片地址不进提示词：换成短编号 `[图片:m1]`，模型照抄编号，
+  // 拿回来再按表还原成地址——地址长得离谱，直接给模型抄十有八九抄串行
+  const medias = buildMediaBook(messages)
+  if (medias.tokens.size) {
+    log.info(`${id} 的发言里有 ${medias.tokens.size} 张图，投喂时以短编号代替地址`)
+  }
   const generated = await ctx.qqGroupLlm.analyzeUserPersona({
     userId: target.userId,
     username,
-    messages: formatForPrompt(messages, resolveTimeFormatter(ctx, config.timezone)),
+    messages: formatForPrompt(messages, resolveTimeFormatter(ctx, config.timezone), medias),
   }, ticket)
 
   if (!generated) {
@@ -197,7 +207,8 @@ export async function resolvePersona(
     .map((item) => {
       // 兼容旧形态 {sender, content}：只取 content
       const text = item && typeof item === 'object' ? String((item as { content?: unknown })?.content ?? '') : String(item ?? '')
-      return text.trim()
+      // 模型抄回来的是图片短编号，按表还原成 `[图片](url)`——库里存的就是这个形态
+      return resolveMediaTokens(text.trim(), medias)
     })
     .filter(Boolean)
   if (evidence.length < rawEvidence.length) {
@@ -225,4 +236,31 @@ export async function resolvePersona(
   log.info(`用户画像 ${id} 已更新（完全由本次发言生成，未参考已存结论），` +
     `基于 ${messages.length} 条发言，总耗时 ${Date.now() - startedAt}ms`)
   return { persona: profile, avatar, cached: false, messageCount: messages.length }
+}
+
+/**
+ * 生成（或复用）用户画像，并把代表发言里的图片换成 media 表里缓存的那张图。
+ *
+ * 库里存的一直是原始图片地址：短，且与消息同寿——把 base64 的图片数据塞进画像表，
+ * 一条画像就能涨到几百 KB。出图前才换成缓存的图片数据：QQ 的图链只活几小时，
+ * 直接拿地址渲染，命中缓存的旧画像几乎必然拉不到图（渲染层只剩一枚「图片」小标签）。
+ * 缓存路径与新生成路径都走这一趟，所以放在最外层。
+ */
+export async function resolvePersona(
+  ctx: Context,
+  config: Config,
+  target: PersonaTarget,
+  force = false,
+  ticket?: QueueTicket,
+): Promise<PersonaOutcome> {
+  const outcome = await generatePersona(ctx, config, target, force, ticket)
+  const persona = outcome.persona
+  if (!persona?.evidence?.length) return outcome
+  return {
+    ...outcome,
+    persona: {
+      ...persona,
+      evidence: await inlineMediaTexts(ctx, target.platform, persona.evidence),
+    },
+  }
 }

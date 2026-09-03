@@ -1,11 +1,15 @@
 /**
- * 把消息记录排成投喂给模型的对话文本。不依赖任何服务，纯函数。
+ * 把消息记录排成投喂给模型的对话文本，以及正文里那些图片的来回替换。
  *
- * 这里只管「怎么排」：正文一个字都不动——清洗归 text.ts，措辞归提示词模板。
+ * 排版这部分只管「怎么排」：正文一个字都不动——清洗归 text.ts，措辞归提示词模板。
+ * 图片这部分管两趟替换：投喂前把地址换成短编号（省上下文、防模型抄错），
+ * 出图前把地址换成 media 表里缓存的图片数据（QQ 的图链只活几小时）。
+ * 后者要读库，是这个文件里唯一碰 Context 的地方。
  */
 import type { Context } from 'koishi'
 import type { AvatarBook } from './avatar'
 import { MEDIA_TABLE, type MediaRecord, type MessageRecord } from './database'
+import { logger } from './logger'
 import type { TimeFormatter } from './time'
 
 /** 续行缩进。转发卡片内部的多行发言排版还在用（text.ts），LLM 投喂已改为 JSON 结构，不再依赖它 */
@@ -40,24 +44,96 @@ export interface MediaBook {
   resolve(token?: string | null): string | undefined
 }
 
+/** 一批文本里出现过的图片地址，去重。视频不缓存（报告里一律画成播放占位块），不收 */
+export function imageUrls(texts: readonly string[]): string[] {
+  return [...new Set(texts.flatMap((text) =>
+    [...String(text ?? '').matchAll(IMAGE_PLACEHOLDER)]
+      .filter((match) => match[1] === '图片' && match[2])
+      .map((match) => match[2]!)))]
+}
+
+/**
+ * 从 qq_group_media 按地址取已缓存的图片：`url` → 图片数据（`data:image/jpeg;base64,…`）。
+ *
+ * 表里查不到的地址不进映射——入库时就没抓下来，或者已过 mediaRetentionDays 被清掉了；
+ * 读表失败同样退回空映射。两种情况调用方都保留原始地址：图是锦上添花，不该让整次分析失败。
+ */
+export async function loadMediaData(
+  ctx: Context,
+  platform: string,
+  urls: readonly string[],
+): Promise<Map<string, string>> {
+  if (!urls.length) return new Map()
+  try {
+    const records = await ctx.database
+      .select(MEDIA_TABLE)
+      .where({ platform, url: { $in: [...urls] } } as never)
+      .execute() as MediaRecord[]
+    return new Map(records
+      .filter((record) => record.data)
+      .map((record) => [record.url, record.data]))
+  } catch (error) {
+    logger(ctx).warn(`读取 ${platform} 的图片缓存失败，本次保留原始地址:`, error)
+    return new Map()
+  }
+}
+
+/**
+ * 为一批消息取图片缓存。缓存按平台分键（不同平台的同一串地址不是同一张图），
+ * 所以按平台分组各查一次——一次分析里通常只有一个平台，也就只查一次。
+ */
 export async function loadMediaCache(
   ctx: Context,
   messages: MessageRecord[],
 ): Promise<Map<string, string>> {
-  const urls = [...new Set(messages.flatMap((message) =>
-    [...String(message.content ?? '').matchAll(IMAGE_PLACEHOLDER)]
-      .filter((match) => match[1] === '图片' && match[2])
-      .map((match) => match[2]!)))]
-  const records = await Promise.all(urls.map(async (url) => {
-    const platform = messages.find((message) => message.content.includes(url))?.platform
-    if (!platform) return undefined
-    const [record] = await ctx.database.select(MEDIA_TABLE)
-      .where({ platform, url })
-      .execute()
-    return record as MediaRecord | undefined
-  }))
-  return new Map(records.filter((record): record is MediaRecord => !!record && !!record.data)
-    .map((record) => [record.url, record.data]))
+  const byPlatform = new Map<string, string[]>()
+  for (const message of messages) {
+    const urls = imageUrls([message.content])
+    if (!urls.length) continue
+    byPlatform.set(message.platform, [...byPlatform.get(message.platform) ?? [], ...urls])
+  }
+  const cache = new Map<string, string>()
+  for (const [platform, urls] of byPlatform) {
+    for (const [url, data] of await loadMediaData(ctx, platform, [...new Set(urls)])) {
+      cache.set(url, data)
+    }
+  }
+  return cache
+}
+
+/**
+ * 把正文里的图片地址换成 media 表里缓存下来的图片数据。
+ *
+ * QQ 的图片地址只活几小时，出图时再去拉多半是一块空白（渲染层会退回「图片」小标签）。
+ * 消息入库时已经把图抓下来存进了 media 表（见 message/recorder.ts），这里把
+ * `[图片](https://…)` 原地换成 `[图片](data:image/jpeg;base64,…)`——渲染层认识这个形态
+ * （见 render/html.ts 的 MEDIA_PATTERN），换完不必再动渲染层。
+ * 表里没有的地址原样保留：拉不到那张图，也比连占位符都丢了好。
+ */
+export function inlineMediaData(text: string, cache: ReadonlyMap<string, string>): string {
+  if (!cache.size) return text
+  return String(text ?? '').replace(IMAGE_PLACEHOLDER, (raw, kind: string, url?: string) => {
+    const data = kind === '图片' && url ? cache.get(url) : undefined
+    return data ? `[${kind}](${data})` : raw
+  })
+}
+
+/** 一批文本：里头的图片地址一次查库、一并换成 media 表里的缓存 */
+export async function inlineMediaTexts(
+  ctx: Context,
+  platform: string,
+  texts: readonly string[],
+): Promise<string[]> {
+  const urls = imageUrls(texts)
+  if (!urls.length) return [...texts]
+  const cache = await loadMediaData(ctx, platform, urls)
+  if (!cache.size) {
+    logger(ctx).info(`${urls.length} 张图都不在 media 表里，保留原始地址（图链可能已过期）`)
+    return [...texts]
+  }
+  logger(ctx).info(`图片改从 media 表取，命中 ${cache.size}/${urls.length} 张` +
+    (cache.size < urls.length ? '，其余保留原始地址' : ''))
+  return texts.map((text) => inlineMediaData(text, cache))
 }
 
 /** 为一批消息建媒体映射表。一张表一次分析，编号只在本次分析内有效 */
@@ -96,6 +172,33 @@ function maskMediaContent(content: string, medias: MediaBook): string {
     out = out.split(raw).join(token)
   }
   return out
+}
+
+/** 模型抄回的短编号占位形态：`[图片:m1]` / `[视频:m1]`，整段交给映射表还原 */
+const MEDIA_BOOK_TOKEN = /\[(图片|视频)\s*[:：]\s*m(\d+)\]/g
+
+/**
+ * 把模型抄回来的媒体短编号还原成原始占位符——maskMediaContent 的反向操作。
+ *
+ * 模型的两种回法都要接得住：
+ * - 给了映射表时照抄 `[图片:m1]`，按表还原成 `[图片](url)`；
+ * - 老提示词（或模型自作主张）直接抄 `[图片](url)`，原样放行。
+ * 有短编号却查不到（比如编号抄丢了一位）时保留原样——渲染层不认识它，
+ * 会当普通文字排出来，至少不会静默丢图。
+ */
+export function resolveMediaTokens(content: string, medias?: MediaBook): string {
+  if (!content) return content
+  if (!medias) return stripMediaTokens(content)
+  return content.replace(MEDIA_BOOK_TOKEN, (match, kind: string, token: string) =>
+    medias.resolve(`[${kind}:m${token}]`) ?? match)
+}
+
+/**
+ * 没有映射表时的兜底：模型抄回来的短编号占位符 `[图片:m1]` 无从还原地址，
+ * 把编号尾巴剥掉，退成不带地址的 `[图片]`——渲染层认识这个形态。
+ */
+function stripMediaTokens(content: string): string {
+  return content.replace(MEDIA_BOOK_TOKEN, (_, kind: string) => `[${kind}]`)
 }
 
 /**
