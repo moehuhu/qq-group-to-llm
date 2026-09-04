@@ -60,7 +60,7 @@ export const HIGHLIGHT_DIALOGUES =
 群聊记录（JSON 数组，每条含 time / content；有头像的含 uid 发言人编号、不含 sender，无编号的含 sender 昵称）：
 {messages}
 
-请严格按以下 JSON 格式返回，放在 json 代码块中；没有符合条件的片段就返回 \`[]\`。
+请严格按以下 JSON 格式返回，放在 json 代码块中；content严格按原文返回，不编造，不遗漏；没有符合条件的片段就返回 \`[]\`。
 
 \`\`\`json
 [
