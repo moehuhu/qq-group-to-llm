@@ -26,24 +26,26 @@ export interface AnalysisTarget {
 }
 
 
-/** 取指定频道最近 days 天的消息，按时间正序返回 */
+/** 取指定频道最近 days 天的消息，按时间正序返回。limit 缺省时用 config.maxMessages */
 export async function fetchMessages(
   ctx: Context,
   config: Config,
   target: AnalysisTarget,
   days: number,
+  limit?: number,
 ): Promise<MessageRecord[]> {
   const log = logger(ctx)
+  const cap = limit ?? config.maxMessages
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
   const records = await ctx.database
     .select(TABLE)
     .where({ channelId: target.channelId, timestamp: { $gte: since } })
     .orderBy('timestamp', 'desc')
-    .limit(config.maxMessages)
+    .limit(cap)
     .execute()
 
   log.info(`取到频道 ${target.channelId} 最近 ${days} 天的 ${records.length} 条消息` +
-    (records.length >= config.maxMessages ? `（已达 maxMessages=${config.maxMessages} 上限，更早的消息被截断）` : ''))
+    (records.length >= cap ? `（已达 ${cap} 条上限，更早的消息被截断）` : ''))
   // 老记录里可能还留着平台的残标记、没压过的转发排版块，读出来就地清一遍，
   // 省得渲染和提示词各处理一次
   return records.reverse().map((record) => ({

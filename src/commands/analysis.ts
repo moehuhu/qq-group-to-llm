@@ -38,8 +38,10 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
     .usage([
       '不带参数时生成一份分析报告（话题、金句、活跃榜）。高光对话见「高光对话」命令。',
       '带参数时就聊天记录自由提问，例如：群分析 今天有人聊到部署问题吗',
+      '用 -n 指定分析的最近消息条数，例如：群分析 -n 200。超过设定上限时按上限处理。',
     ].join('\n'))
     .option('days', '-d <days:number>  分析最近几天的记录')
+    .option('count', '-n <count:number>  分析最近的多少条消息，超过上限时按上限处理')
     .option('group', '-g <group:string>  指定频道 ID')
     .option('force', '-f  忽略缓存重新分析')
     .action(async ({ options = {}, session }, query) => {
@@ -49,14 +51,23 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
       if (!channelId) return '请在群聊中使用，或用 -g 指定频道 ID。'
 
       const days = Math.min(Math.max(options.days ?? config.analysisDays, 1), 7)
+
+      // 条数入参：缺省时按配置取；超过 maxMessages 上限时提示并按上限处理
+      const limit = options.count
+        ? Math.min(Math.max(Math.floor(options.count), 1), config.maxMessages)
+        : config.maxMessages
+      const overLimit = !!options.count && options.count > config.maxMessages
+
       const target = await resolveTarget(ctx, session, channelId)
       const question = query?.trim()
 
-      log.info(`群分析由 ${session.userId} 在 ${channelId} 发起，days=${days}，` +
-        `模式=${question ? `问答「${question}」` : '报告'}${options.force ? '，强制刷新' : ''}`)
+      log.info(`群分析由 ${session.userId} 在 ${channelId} 发起，days=${days}` +
+        (options.count ? `，条数=${options.count}${overLimit ? '（超限，按上限处理）' : ''}` : '') +
+        `，模式=${question ? `问答「${question}」` : '报告'}${options.force ? '，强制刷新' : ''}`)
 
       const cacheKey = `${channelId}:${days}`
-      if (!question && !options.force && config.cacheMinutes > 0) {
+      // 指定了条数时结果与默认配置不同，不复用缓存
+      if (!question && !options.count && !options.force && config.cacheMinutes > 0) {
         const cached = cache.get(cacheKey)
         if (cached && cached.expireAt > Date.now()) {
           log.info(`命中群分析缓存 ${cacheKey}，剩余 ${Math.round((cached.expireAt - Date.now()) / 1000)}s，跳过 LLM 调用`)
@@ -81,7 +92,12 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
           await session.send(`「群分析」请求已入队，前方还有 ${ticket.position} 个请求，请耐心等待…`)
         }
 
-        const messages = await fetchMessages(ctx, config, target, days)
+        // 条数超限时先提示用户按上限处理，再继续取数
+        if (overLimit) {
+          await session.send(`你指定的 ${options.count} 条超过单次分析上限 ${config.maxMessages} 条，将按 ${config.maxMessages} 条处理。`)
+        }
+
+        const messages = await fetchMessages(ctx, config, target, days, limit)
         if (messages.length < config.minMessages) {
           log.info(`群分析中止: ${messages.length} 条记录不足 minMessages=${config.minMessages}`)
           return `最近 ${days} 天只有 ${messages.length} 条记录，不足 ${config.minMessages} 条，无法分析。`
@@ -94,7 +110,7 @@ export function applyAnalysisCommand(ctx: Context, config: Config) {
           return renderQueryAnswer(result)
         }
         const result = await analyzeGroup(ctx, config, messages, target, '', ticket)
-        if (config.cacheMinutes > 0) {
+        if (!options.count && config.cacheMinutes > 0) {
           cache.set(cacheKey, { result, expireAt: Date.now() + config.cacheMinutes * 60 * 1000 })
           log.debug(`群分析结果已缓存 ${cacheKey}，${config.cacheMinutes} 分钟内复用`)
         }
