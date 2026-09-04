@@ -47,6 +47,11 @@ export interface AvatarBook {
   /** 取某人的头像地址，取不到返回 undefined（渲染层退回首字色块） */
   avatarOf(subject: AvatarSubject): string | undefined
   /**
+   * 把模型抄回来的编号还原成昵称（uid / 用户 ID → username）。
+   * 认不出编号时返回 undefined，调用方退回模型直接抄回来的 sender。
+   */
+  usernameOf(token?: string | null): string | undefined
+  /**
    * 把模型抄回来的标记还原成头像地址。编号、用户 ID、昵称都认，
    * 已经是完整地址的原样放行；都对不上时按 sender 昵称再找一次，找不到返回 undefined
    * （渲染层会退回首字色块，不至于挂错脸）。
@@ -123,6 +128,12 @@ export function buildAvatarBook(
     inlineChars,
     uidOf: (subject) => byUserId.get(identity(subject))?.uid,
     avatarOf: (subject) => byUserId.get(identity(subject))?.avatar,
+    // 只认编号与用户 ID，不认昵称——昵称本身就是要还原的目标
+    usernameOf: (token) => {
+      const raw = String(token ?? '').trim()
+      if (!raw) return undefined
+      return byUid.get(raw)?.username || byUserId.get(raw)?.username || undefined
+    },
     resolve: (token, sender) => {
       const raw = String(token ?? '').trim()
       if (raw) {

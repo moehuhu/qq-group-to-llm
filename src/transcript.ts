@@ -188,7 +188,8 @@ function stripMediaTokens(content: string): string {
 
 export interface PromptMessageOptions {
   /**
-   * 头像映射表。给了就在每条里带上发言人编号 uid（高光对话出图需要模型把发言人照抄回来），
+   * 头像映射表。给了就优先带发言人编号 uid、省掉 sender 昵称（高光对话需要模型把发言人照抄回来，
+   * 返回后再按编号还原昵称与头像）；没有编号的人才退回 sender 昵称。
    * 头像地址本身留在表里不进提示词——地址长、还容易被抄错。
    */
   avatars?: AvatarBook
@@ -207,10 +208,11 @@ export interface PromptMessageOptions {
  * 把消息记录排成投喂给模型的 JSON 数组字符串。
  * 与旧的纯文本行不同，每条消息是一个独立对象，字段：
  * - time：发言时间戳
- * - sender：发送者昵称（没有昵称时回落为用户 ID）
  * - content：发言原文，多行原样保留（JSON 字符串天然区分边界，不再靠缩进）；
  *   给了 medias 映射表时，正文里的图片占位符会被换成短编号 `[图片:m1]`，地址留在表里
- * - uid：发言人在头像映射表里的短编号，仅在给了 avatars 且该发言人有头像时输出
+ * - uid：发言人在头像映射表里的短编号，给了 avatars 且该发言人有头像时输出；
+ *   有 uid 就不带 sender——昵称由映射表按编号还原，省上下文也省得模型抄错
+ * - sender：发送者昵称（没有昵称时回落为用户 ID），仅在没有 uid 的人上输出
  * - scope：归属标记 `群:xxx` / `频道:xxx`，仅在 withScope 时输出
  */
 export function toPromptJson(
@@ -221,13 +223,16 @@ export function toPromptJson(
   const list = messages.map((message) => {
     const item: Record<string, string> = {
       time: (options.withDate ? time.dateTime : time.time)(message.timestamp),
-      sender: message.username || message.userId || '',
       content: options.medias
         ? maskMediaContent(message.content, options.medias)
         : message.content,
     }
     const uid = options.avatars?.uidOf(message)
-    if (uid) item.uid = uid
+    if (uid) {
+      item.uid = uid
+    } else {
+      item.sender = message.username || message.userId || ''
+    }
     if (options.withScope) {
       item.scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`
     }

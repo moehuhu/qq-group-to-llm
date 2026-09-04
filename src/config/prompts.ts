@@ -57,7 +57,7 @@ export const HIGHLIGHT_DIALOGUES =
 群聊：{groupName}
 时间范围：{timeRange}
 
-群聊记录（JSON 数组，每条含 time / sender / content，有头像的含 uid 发言人编号）：
+群聊记录（JSON 数组，每条含 time / content；有头像的含 uid 发言人编号、不含 sender，无编号的含 sender 昵称）：
 {messages}
 
 请严格按以下 JSON 格式返回，放在 json 代码块中；没有符合条件的片段就返回 \`[]\`。
@@ -67,13 +67,15 @@ export const HIGHLIGHT_DIALOGUES =
   {
     "title": "一句话概括这段对话在聊什么",
     "lines": [
-      { "sender": "昵称", "uid": "发言人编号", "content": "发言原文" },
-      { "sender": "昵称", "uid": "发言人编号", "content": "第二条发言原文" }
+      { "uid": "发言人编号", "content": "发言原文" },
+      { "sender": "昵称", "content": "第二条发言原文" }
     ],
     "reason": "笑点在哪"
   }
 ]
 \`\`\`
+
+lines 里：记录带 uid 发言人编号的就照抄 uid、不要写 sender；不带编号的才照抄 sender 昵称。
 `
 
 export const QUERY =

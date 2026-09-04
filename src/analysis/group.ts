@@ -111,10 +111,11 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
 }
 
 /**
- * 规整模型返回的高光对话：丢掉空轮次、缺 sender 或 content 的轮次，按 maxHighlightLines 截断，
+ * 规整模型返回的高光对话：丢掉空轮次、缺昵称或 content 的轮次，按 maxHighlightLines 截断，
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  *
- * 模型直接返回每轮的发送者昵称、头像与发言原文，不做回查校验。
+ * 投喂时带编号的发言人不给昵称，模型抄回 uid 后这里按编号还原昵称（sender）；
+ * 模型没抄 uid（旧提示词或自作主张抄昵称）时退回它直接抄回来的 sender，不做回查校验。
  * 原文里的图片短编号（`[图片:m1]`）顺带还原成 `[图片](url)` 形态——渲染层认识的就是它。
  */
 export function normalizeDialogue(
@@ -125,7 +126,10 @@ export function normalizeDialogue(
 ): HighlightDialogue<HighlightLine> | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
     .map((line) => {
-      const sender = String(line?.sender ?? '').trim()
+      // 有编号优先按编号还原昵称（新投喂形态下模型只抄 uid）；认不出编号就退回模型抄的 sender
+      const sender = avatars
+        ? avatars.usernameOf(line?.uid) || String(line?.sender ?? '').trim()
+        : String(line?.sender ?? '').trim()
       return {
         sender,
         content: resolveMediaTokens(
@@ -334,7 +338,9 @@ export async function analyzeDialogues(
     if (!dialogue) {
       const title = summarizeDropped(item?.title)
       const lineCount = Array.isArray(item?.lines)
-        ? item.lines.filter((line) => String(line?.sender ?? '').trim() && String(line?.content ?? '').trim()).length
+        ? item.lines.filter((line) =>
+          (String(line?.uid ?? '').trim() || String(line?.sender ?? '').trim()) &&
+          String(line?.content ?? '').trim()).length
         : 0
       droppedDetails.push(`第 ${index + 1} 段「${title}」：有效轮次仅 ${lineCount} 轮（不足两轮）`)
       continue
