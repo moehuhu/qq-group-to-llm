@@ -63,6 +63,8 @@ export interface Config {
   analysisDays: number
   /** 单次分析最多取用的消息条数 */
   maxMessages: number
+  /** 群分析 / 高光对话默认取用的消息条数（不指定 -n 时生效，超过上限按上限处理） */
+  defaultMessages: number
   /** 触发分析所需的最小消息条数 */
   minMessages: number
   /** 分析结果缓存分钟数（0 表示不缓存） */
@@ -163,7 +165,9 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     analysisDays: Schema.number().default(1).min(1).max(7).description('「群分析」默认分析的天数'),
-    maxMessages: Schema.number().default(500).min(50).max(5000).description('单次分析最多取用的消息条数（取最近的）'),
+    maxMessages: Schema.number().default(5000).min(1).description('单次分析最多取用的消息条数（取最近的）'),
+    defaultMessages: Schema.number().default(1500).min(1).max(5000)
+      .description('「群分析」与「高光对话」默认取用的消息条数（不指定 -n 时生效）。超过「单次分析最多取用的消息条数」时按后者处理'),
     minMessages: Schema.number().default(20).min(1).description('触发分析所需的最小消息条数'),
     cacheMinutes: Schema.number().default(5).min(0).description('分析结果缓存分钟数，0 表示不缓存'),
     maxUsersInReport: Schema.number().default(10).min(1).description('报告中展示的活跃用户数'),

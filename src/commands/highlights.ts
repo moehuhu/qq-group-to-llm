@@ -58,10 +58,11 @@ export function applyHighlightCommand(ctx: Context, config: Config) {
 
       const days = Math.min(Math.max(options.days ?? config.analysisDays, 1), 7)
 
-      // 条数入参：缺省时按配置取；超过 maxMessages 上限时提示并按上限处理
+      // 条数入参：指定 -n 时按入参取（超过 maxMessages 上限提示并按上限处理）；
+      // 缺省时按配置的 defaultMessages 取，同样钳制在 maxMessages 内
       const messageLimit = options.limit
         ? Math.min(Math.max(Math.floor(options.limit), 1), config.maxMessages)
-        : config.maxMessages
+        : Math.min(Math.max(Math.floor(config.defaultMessages), 1), config.maxMessages)
       const overLimit = !!options.limit && options.limit > config.maxMessages
 
       const target = await resolveTarget(ctx, session, channelId)
