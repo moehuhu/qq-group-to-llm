@@ -174,7 +174,7 @@ export const Config: Schema<Config> = Schema.intersect([
     maxTopics: Schema.number().default(5).min(1).description('最多生成的话题数'),
     maxGoldenQuotes: Schema.number().default(3).min(0).description('群分析报告中最多收录的金句条数，0 表示不收金句'),
     maxHighlightDialogues: Schema.number().default(3).min(0).description('「高光对话」中最多截取的高光对话段数，0 表示不收对话'),
-    maxHighlightLines: Schema.number().default(6).min(2).max(20).description('单段高光对话最多保留的轮次，超出的部分会被截断'),
+    maxHighlightLines: Schema.number().default(6).min(2).description('单段高光对话最多保留的轮次，超出的部分会被截断'),
   }).description('分析设置'),
 
   Schema.object({
