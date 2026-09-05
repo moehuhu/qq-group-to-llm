@@ -61,7 +61,6 @@ export async function renderHtmlToImage(
   const log = logger(ctx)
   const startedAt = Date.now()
   try {
-    log.info(`[${task}] 即将渲染 HTML:\n${formatHtmlForLog(html)}`)
     const image = await ctx.puppeteer.render(html, async (page, next) => {
       // deviceScaleFactor=2 出二倍图，QQ 里缩放后文字才不糊
       await page.setViewport({
