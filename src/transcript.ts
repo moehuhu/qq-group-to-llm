@@ -7,7 +7,6 @@
  * 后者要读缓存（现在是文件存储，见 media.ts），是这个文件里唯一碰 Context 的地方。
  */
 import type { Context } from 'koishi'
-import type { AvatarBook } from './avatar'
 import type { MessageRecord } from './database'
 import { loadMedia } from './media'
 import { logger } from './logger'
@@ -17,7 +16,7 @@ import type { TimeFormatter } from './time'
  * 图片占位符：入库时的形态是 `[图片](url)`。
  *
  * 高光对话出图时，这个形态会被替换成短编号 `[图片:m1]`（url 进 MediaBook 的映射表），
- * 模型照抄短编号后由 MediaBook 还原成本来的形态——与头像的 uid 同一套思路。
+ * 模型照抄短编号后由 MediaBook 还原成本来的形态——与头像地址不进提示词是同一套思路。
  */
 export const IMAGE_PLACEHOLDER = /\[(图片|视频)\](?:\((https?:\/\/[^\s)]+)\))?/g
 
@@ -188,14 +187,8 @@ function stripMediaTokens(content: string): string {
 
 export interface PromptMessageOptions {
   /**
-   * 头像映射表。给了就优先带发言人编号 uid、省掉 sender 昵称（高光对话需要模型把发言人照抄回来，
-   * 返回后再按编号还原昵称与头像）；没有编号的人才退回 sender 昵称。
-   * 头像地址本身留在表里不进提示词——地址长、还容易被抄错。
-   */
-  avatars?: AvatarBook
-  /**
    * 媒体映射表。给了就把每条正文里的媒体占位符换成短编号（`[图片:m1]`），
-   * 地址只留在表里，提示词里不再出现长 URL——与头像 uid 同一套思路，省上下文防抄错。
+   * 地址只留在表里，提示词里不再出现长 URL——省上下文防抄错。
    */
   medias?: MediaBook
   /** 是否在每条里带上 scope 归属字段（用户画像需要区分群/频道） */
@@ -210,9 +203,8 @@ export interface PromptMessageOptions {
  * - time：发言时间戳
  * - content：发言原文，多行原样保留（JSON 字符串天然区分边界，不再靠缩进）；
  *   给了 medias 映射表时，正文里的图片占位符会被换成短编号 `[图片:m1]`，地址留在表里
- * - uid：发言人在头像映射表里的短编号，给了 avatars 且该发言人有头像时输出；
- *   有 uid 就不带 sender——昵称由映射表按编号还原，省上下文也省得模型抄错
- * - sender：发送者昵称（没有昵称时回落为用户 ID），仅在没有 uid 的人上输出
+ * - sender：发送者昵称（没有昵称时回落为用户 ID）；头像地址不进提示词，
+ *   高光对话出图前按抄回的昵称在头像映射表里查（见 avatar.ts）
  * - scope：归属标记 `群:xxx` / `频道:xxx`，仅在 withScope 时输出
  */
 export function toPromptJson(
@@ -223,15 +215,10 @@ export function toPromptJson(
   const list = messages.map((message) => {
     const item: Record<string, string> = {
       time: (options.withDate ? time.dateTime : time.time)(message.timestamp),
+      sender: message.username || message.userId || '',
       content: options.medias
         ? maskMediaContent(message.content, options.medias)
         : message.content,
-    }
-    const uid = options.avatars?.uidOf(message)
-    if (uid) {
-      item.uid = uid
-    } else {
-      item.sender = message.username || message.userId || ''
     }
     if (options.withScope) {
       item.scope = message.guildId ? `群:${message.guildId}` : `频道:${message.channelId}`

@@ -1,14 +1,14 @@
 /**
- * 头像映射表：「用户 ID ↔ 头像地址」的对应关系单独存一份，别处只传一个短编号。
+ * 头像映射表：「用户 ID / 昵称 ↔ 头像地址」的对应关系单独存一份，提示词里不带地址。
  *
  * 起因是高光对话要出图，得知道每轮发言人的头像。原先的做法是把头像地址写进每一条
  * 消息记录，投喂时再一并发给模型、让它照抄回来——QQ 的头像地址动辄七八十个字符
  * （官方平台的 openid 形态更长），一个人说一万句就在库里重复一万遍，
  * 几百条记录光头像就能占掉上万字符的上下文，而且长地址模型抄着抄着就抄串行。
  *
- * 现在一人一行存进 qq_group_avatars，两头都只走编号：
+ * 现在一人一行存进 qq_group_avatars，地址不进提示词：
  * - 落库：recorder 见到新的脸才写一次（rememberAvatar），消息行不再带地址；
- * - 投喂：每条只带表里的短编号 `u1`，模型抄回编号，出图前再还原成地址（resolve）。
+ * - 投喂：每条只带 sender 昵称，模型抄回昵称，出图前按昵称在表里查地址（resolve）。
  *
  * 上半截（buildAvatarBook 与它返回的表）是纯函数，不碰数据库；
  * 下半截（loadAvatarBook / rememberAvatar）负责与 qq_group_avatars 打交道。
@@ -17,13 +17,11 @@ import { Context } from 'koishi'
 import { AVATAR_TABLE, type AvatarRecord, type MessageRecord } from './database'
 import { logger } from './logger'
 
-/** 表里的一行：短编号 ↔ 用户 ID ↔ 头像地址 */
+/** 表里的一行：用户 ID ↔ 昵称 ↔ 头像地址 */
 export interface AvatarEntry {
-  /** 投喂给模型的短编号，形如 `u1`，仅在本次分析内有效 */
-  uid: string
   /** 用户 ID；平台没给时退回昵称——认人总得有个键 */
   userId: string
-  /** 最近一次见到的昵称，用于模型只抄回昵称时兜底 */
+  /** 最近一次见到的昵称，模型抄回 sender 后按它查头像 */
   username: string
   /** 头像地址，非空 */
   avatar: string
@@ -34,37 +32,22 @@ export type AvatarSubject = Pick<MessageRecord, 'userId' | 'username'> | { userI
 
 /** 判断模型抄回来的是不是一个完整的头像地址（用户改过提示词、仍让模型抄地址时会遇到） */
 const IS_URL = /^(https?:)?\/\//i
-/** 自由文本里的编号：形如 u12，前后不能紧挨字母数字下划线 */
-const UID_IN_TEXT = /(?<![A-Za-z0-9_])u\d+(?![A-Za-z0-9_])/g
 
 export interface AvatarBook {
-  /** 表里的全部行，按编号分配顺序（即首次发言顺序） */
+  /** 表里的全部行，按首次发言顺序 */
   readonly entries: readonly AvatarEntry[]
   /** 表里有几个人 */
   readonly size: number
   /** 若把头像地址逐条写进提示词，这些地址一共要占多少字符——日志里用它说明省了多少 */
   readonly inlineChars: number
-  /** 取某人的编号；没有头像的人不进表，也就没有编号 */
-  uidOf(subject: AvatarSubject): string | undefined
   /** 取某人的头像地址，取不到返回 undefined（渲染层退回首字色块） */
   avatarOf(subject: AvatarSubject): string | undefined
   /**
-   * 把模型抄回来的编号还原成昵称（uid / 用户 ID → username）。
-   * 认不出编号时返回 undefined，调用方退回模型直接抄回来的 sender。
-   */
-  usernameOf(token?: string | null): string | undefined
-  /**
-   * 把一段自由文本（title / reason 等）里夹带的编号还原成昵称：
-   * 模型只见过编号，写理由时难免顺手写成「u3 一本正经地……」。
-   * 只替换表里确有的编号，且要求前后不紧挨字母数字，避免误伤 "u2" 这类普通词。
-   */
-  restoreUids(text: string): string
-  /**
-   * 把模型抄回来的标记还原成头像地址。编号、用户 ID、昵称都认，
-   * 已经是完整地址的原样放行；都对不上时按 sender 昵称再找一次，找不到返回 undefined
+   * 按模型抄回来的发言人找头像地址。先看 avatar 字段：已经是完整地址的原样放行，
+   * 用户 ID 或昵称也认；对不上再按 sender 昵称在表里找一次，找不到返回 undefined
    * （渲染层会退回首字色块，不至于挂错脸）。
    */
-  resolve(token?: string | null, sender?: string | null): string | undefined
+  resolve(avatar?: string | null, sender?: string | null): string | undefined
 }
 
 /** 认人用的键：优先用户 ID，平台没给就退昵称 */
@@ -83,7 +66,7 @@ export function avatarKey(platform: string, userId: string): string {
  * 只收 messages 里出现过的人：投喂时不该出现没人用得上的编号。
  * 头像地址优先取 stored（qq_group_avatars 里按人存的那份，最新），
  * 表里没这个人时才退回消息行自带的地址——那是升级前落的老记录。
- * 编号在首次露面时分配，之后不变；一个头像都没有的人不进表。
+ * 一个头像都没有的人不进表。
  */
 export function buildAvatarBook(
   messages: MessageRecord[],
@@ -106,7 +89,6 @@ export function buildAvatarBook(
     const avatar = known.get(userId)?.avatar?.trim() || message.avatar?.trim() || ''
     if (!avatar) continue
     byUserId.set(userId, {
-      uid: `u${byUserId.size + 1}`,
       userId,
       username: message.username || known.get(userId)?.username || userId,
       avatar,
@@ -114,7 +96,6 @@ export function buildAvatarBook(
   }
 
   const entries = [...byUserId.values()]
-  const byUid = new Map(entries.map((entry) => [entry.uid, entry]))
 
   // 昵称索引只收「独此一人」的昵称：同名的两个人各有各的脸，认错不如不认
   const byName = new Map<string, AvatarEntry | null>()
@@ -134,24 +115,12 @@ export function buildAvatarBook(
     entries,
     size: entries.length,
     inlineChars,
-    uidOf: (subject) => byUserId.get(identity(subject))?.uid,
     avatarOf: (subject) => byUserId.get(identity(subject))?.avatar,
-    // 只认编号与用户 ID，不认昵称——昵称本身就是要还原的目标
-    usernameOf: (token) => {
-      const raw = String(token ?? '').trim()
-      if (!raw) return undefined
-      return byUid.get(raw)?.username || byUserId.get(raw)?.username || undefined
-    },
-    restoreUids: (text) => {
-      if (!text || !byUid.size) return text
-      // 中文与标点都算边界，只有紧挨字母数字下划线时才不认（如 "u1x"、"au1"）
-      return text.replace(UID_IN_TEXT, (token) => byUid.get(token)?.username || token)
-    },
-    resolve: (token, sender) => {
-      const raw = String(token ?? '').trim()
+    resolve: (avatar, sender) => {
+      const raw = String(avatar ?? '').trim()
       if (raw) {
         if (IS_URL.test(raw)) return raw
-        const hit = byUid.get(raw) || byUserId.get(raw) || byName.get(raw)
+        const hit = byUserId.get(raw) || byName.get(raw)
         if (hit) return hit.avatar
       }
       const name = String(sender ?? '').trim()
