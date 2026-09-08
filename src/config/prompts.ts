@@ -74,8 +74,6 @@ export const HIGHLIGHT_DIALOGUES =
   }
 ]
 \`\`\`
-
-lines 里的 sender 照抄记录里的 sender 昵称，不要改写；title 与 reason 里提到发言人时也用该昵称。
 `
 
 export const QUERY =
