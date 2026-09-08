@@ -148,10 +148,17 @@ export function normalizeDialogue(
 
   if (lines.length < 2) return null
 
+  // 模型只见过编号，title / reason 里提到人时会写成 u3 之类，这里按表换回昵称
+  const restore = (text: string | undefined) => {
+    const cleaned = text?.trim()
+    if (!cleaned) return undefined
+    return avatars ? avatars.restoreUids(cleaned) : cleaned
+  }
+
   return {
-    title: item?.title?.trim() || undefined,
+    title: restore(item?.title),
     lines,
-    reason: item?.reason?.trim() || undefined,
+    reason: restore(item?.reason),
   }
 }
 

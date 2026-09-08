@@ -76,6 +76,7 @@ export const HIGHLIGHT_DIALOGUES =
 \`\`\`
 
 lines 里：记录带 uid 发言人编号的就照抄 uid、不要写 sender；不带编号的才照抄 sender 昵称。
+title 与 reason 里若需提到发言人，直接写其 uid 编号（如 u1），系统会还原成昵称，不要自行编造称呼。
 `
 
 export const QUERY =

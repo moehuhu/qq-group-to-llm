@@ -34,6 +34,8 @@ export type AvatarSubject = Pick<MessageRecord, 'userId' | 'username'> | { userI
 
 /** 判断模型抄回来的是不是一个完整的头像地址（用户改过提示词、仍让模型抄地址时会遇到） */
 const IS_URL = /^(https?:)?\/\//i
+/** 自由文本里的编号：形如 u12，前后不能紧挨字母数字下划线 */
+const UID_IN_TEXT = /(?<![A-Za-z0-9_])u\d+(?![A-Za-z0-9_])/g
 
 export interface AvatarBook {
   /** 表里的全部行，按编号分配顺序（即首次发言顺序） */
@@ -51,6 +53,12 @@ export interface AvatarBook {
    * 认不出编号时返回 undefined，调用方退回模型直接抄回来的 sender。
    */
   usernameOf(token?: string | null): string | undefined
+  /**
+   * 把一段自由文本（title / reason 等）里夹带的编号还原成昵称：
+   * 模型只见过编号，写理由时难免顺手写成「u3 一本正经地……」。
+   * 只替换表里确有的编号，且要求前后不紧挨字母数字，避免误伤 "u2" 这类普通词。
+   */
+  restoreUids(text: string): string
   /**
    * 把模型抄回来的标记还原成头像地址。编号、用户 ID、昵称都认，
    * 已经是完整地址的原样放行；都对不上时按 sender 昵称再找一次，找不到返回 undefined
@@ -133,6 +141,11 @@ export function buildAvatarBook(
       const raw = String(token ?? '').trim()
       if (!raw) return undefined
       return byUid.get(raw)?.username || byUserId.get(raw)?.username || undefined
+    },
+    restoreUids: (text) => {
+      if (!text || !byUid.size) return text
+      // 中文与标点都算边界，只有紧挨字母数字下划线时才不认（如 "u1x"、"au1"）
+      return text.replace(UID_IN_TEXT, (token) => byUid.get(token)?.username || token)
     },
     resolve: (token, sender) => {
       const raw = String(token ?? '').trim()
