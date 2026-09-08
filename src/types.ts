@@ -52,24 +52,26 @@ export interface HighlightLine {
   sender: string
   /** 发言原文（模型从群聊记录里照抄，不做回查校验） */
   content: string
-  /** 发言人头像地址，由头像映射表按昵称查得；取不到时渲染退回首字色块 */
+  /** 发言人头像地址，由头像映射表按 uid 还原；取不到时渲染退回首字色块 */
   avatar?: string
 }
 
 /**
  * 模型返回的一轮发言（尚未补头像、还原媒体）。
  *
- * 头像地址不进提示词，投喂时每条只带 sender 昵称与原文，模型照抄昵称回来，
- * 由 avatar.ts 的映射表按昵称查头像；avatar 只为兼容改过提示词、
- * 仍让模型直接抄地址的旧配置而保留。
+ * 头像地址不进提示词，投喂时每条带 sender 昵称，有头像的人再带一个短编号 uid，
+ * 模型把两者都照抄回来：昵称优先按 uid 在 avatar.ts 的映射表里还原（防模型抄错字），
+ * 头像也按 uid 查；avatar 只为兼容改过提示词、仍让模型直接抄地址的旧配置而保留。
  *
- * content 里的图片：投喂时被替换成短编号 `[图片:m1]`（见 transcript.ts 的
+ * content 里的图片同理：投喂时被替换成短编号 `[图片:m1]`（见 transcript.ts 的
  * MediaBook），模型照抄回来后在 analysis/group.ts 还原成 `[图片](url)`。
  */
 export interface HighlightLineDraft {
-  /** 模型照抄回来的发言人昵称 */
+  /** 模型照抄回来的昵称；有 uid 时以映射表按编号还原的昵称为准 */
   sender?: string
   content?: string
+  /** 发言人在头像映射表里的短编号，按它查头像（顺带校正昵称） */
+  uid?: string
   /** 模型直接抄回来的头像地址（旧提示词的形态） */
   avatar?: string
 }

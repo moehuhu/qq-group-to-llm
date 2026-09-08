@@ -61,20 +61,23 @@ export function excludeUsers(messages: MessageRecord[], blocked: string[]): Mess
 }
 
 /**
- * 把消息渲染成投喂给 LLM 的 JSON 数组字符串，一条记录一个对象，
- * 字段含 time / sender / content。头像地址不进提示词，高光对话出图前
- * 按模型抄回的 sender 昵称在头像映射表里查。
+ * 把消息渲染成投喂给 LLM 的 JSON 数组字符串，一条记录一个对象。
+ * 字段含 time / sender / content；给了头像映射表时额外带一个短编号 uid，
+ * 与 sender 并存，供模型把发言人编号照抄进返回结果（高光对话出图按它查头像）。
+ * 头像地址留在表里不进提示词——省上下文，也省得模型抄错长地址。
+ * 没有头像的人不进表，也就不带 uid，模型把该字段留空即可。
  *
  * 给了媒体映射表 medias 时，正文里的图片占位符会被换成短编号 `[图片:m1]`，
- * 地址只留在表里不进提示词（省上下文、防抄错），
+ * 地址只留在表里不进提示词（与头像 uid 同一套思路：省上下文、防抄错），
  * 模型照抄短编号后由 normalizeDialogue 还原成 `[图片](url)`。
  */
 export function formatForPrompt(
   messages: MessageRecord[],
   time: TimeFormatter,
+  avatars?: AvatarBook,
   medias?: MediaBook,
 ): string {
-  return toPromptJson(messages, time, { medias })
+  return toPromptJson(messages, time, { avatars, medias })
 }
 
 /** 把模型返回的条目压成一句可读的摘要，日志里用它指出具体丢的是哪一条 */
@@ -111,7 +114,9 @@ export function normalizeQuote(item: Partial<GoldenQuote> | undefined): GoldenQu
  * 规整模型返回的高光对话：丢掉空轮次、缺昵称或 content 的轮次，按 maxHighlightLines 截断，
  * 校验放在截断之后，保证真正渲染出来的那几轮确实构成一段对话。
  *
- * sender 直接用模型抄回来的昵称，不做回查校验；头像按昵称在映射表里查。
+ * 投喂时 sender 与 uid 并存，模型抄回 uid 的轮次这里按编号校正昵称（sender），
+ * 没抄 uid 的轮次用它直接抄回来的 sender，不做回查校验。
+ * title / reason 里若仍夹带编号，也一并换回昵称兜底。
  * 原文里的图片短编号（`[图片:m1]`）顺带还原成 `[图片](url)` 形态——渲染层认识的就是它。
  */
 export function normalizeDialogue(
@@ -122,16 +127,20 @@ export function normalizeDialogue(
 ): HighlightDialogue<HighlightLine> | null {
   const lines = (Array.isArray(item?.lines) ? item.lines : [])
     .map((line) => {
-      const sender = String(line?.sender ?? '').trim()
+      // 有编号优先按编号取昵称（表里的最准）；认不出编号就退回模型抄的 sender
+      const sender = avatars
+        ? avatars.usernameOf(line?.uid) || String(line?.sender ?? '').trim()
+        : String(line?.sender ?? '').trim()
       return {
         sender,
         content: resolveMediaTokens(
           String(line?.content ?? '').trim(),
           medias,
         ),
-        // 头像按昵称在表里查；没有表（旧调用）时只认模型直接抄回来的地址
+        // 模型抄回来的是编号，这里按表还原成地址；编号抄丢了就拿昵称在表里找一次。
+        // 没有表（旧调用）时只认模型直接抄回来的地址
         avatar: avatars
-          ? avatars.resolve(line?.avatar, sender)
+          ? avatars.resolve(line?.uid ?? line?.avatar, sender)
           : String(line?.avatar ?? '').trim() || undefined,
       }
     })
@@ -140,10 +149,17 @@ export function normalizeDialogue(
 
   if (lines.length < 2) return null
 
+  // 模型只见过编号，title / reason 里提到人时会写成 u3 之类，这里按表换回昵称
+  const restore = (text: string | undefined) => {
+    const cleaned = text?.trim()
+    if (!cleaned) return undefined
+    return avatars ? avatars.restoreUids(cleaned) : cleaned
+  }
+
   return {
-    title: item?.title?.trim() || undefined,
+    title: restore(item?.title),
     lines,
-    reason: item?.reason?.trim() || undefined,
+    reason: restore(item?.reason),
   }
 }
 
@@ -302,14 +318,14 @@ export async function analyzeDialogues(
 
   const time = resolveTimeFormatter(ctx, config.timezone)
   const context = buildContext(usable, target, time)
-  // 出图要头像，但地址不进提示词：先从库里取出这批人的「昵称 ↔ 头像地址」映射表，
-  // 投喂时每条只带 sender 昵称，模型照抄昵称，落地时按昵称查地址。
-  // 图片则把正文里的媒体占位符换成短编号 `[图片:m1]`，地址只留在映射表里——
+  // 出图要头像，但地址不进提示词：先从库里取出这批人的「用户 ID ↔ 头像地址」映射表，
+  // 投喂时每条在昵称之外带一个表里的短编号 uid，模型照抄编号，落地时按编号查地址。
+  // 图片同理：正文里的媒体占位符换成短编号 `[图片:m1]`，地址只留在映射表里——
   // QQ 的图片地址动辄一两百字符，逐条展开既烧上下文、长地址又容易被模型抄串行
   const avatars = await loadAvatarBook(ctx, usable)
   const mediaCache = await loadMediaCache(ctx, usable)
   const medias = buildMediaBook(usable, mediaCache)
-  const messagesText = formatForPrompt(usable, time, medias)
+  const messagesText = formatForPrompt(usable, time, avatars, medias)
 
   log.info(`开始抽取高光对话: ${context.groupName}，${usable.length} 条消息，范围 ${context.timeRange}` +
     (avatars.size ? `，头像映射表 ${avatars.size} 人（头像地址不进提示词，省下约 ${avatars.inlineChars} 字）` : '') +
@@ -331,7 +347,8 @@ export async function analyzeDialogues(
       const title = summarizeDropped(item?.title)
       const lineCount = Array.isArray(item?.lines)
         ? item.lines.filter((line) =>
-          String(line?.sender ?? '').trim() && String(line?.content ?? '').trim()).length
+          (String(line?.uid ?? '').trim() || String(line?.sender ?? '').trim()) &&
+          String(line?.content ?? '').trim()).length
         : 0
       droppedDetails.push(`第 ${index + 1} 段「${title}」：有效轮次仅 ${lineCount} 轮（不足两轮）`)
       continue
