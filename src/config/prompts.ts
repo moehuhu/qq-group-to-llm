@@ -100,7 +100,7 @@ export const QUERY =
 `
 
 export const USER_PERSONA =
-  `你是社群观察员。基于该用户最近 {lookbackDays} 天的聊天记录，给出中性、克制的用户画像。
+  `你是社群观察员。基于该用户最近 {lookbackDays} 天的聊天记录，给出详细、中性、克制的用户画像。
 
 只写记录能支撑的结论，不推测身份、职业、住址等隐私，不做褒贬评价。
 evidence 只填若干条最有代表性的原话，纯文本。
